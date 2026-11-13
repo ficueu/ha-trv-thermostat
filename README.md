@@ -137,3 +137,5 @@ pytest
 1. Podbij `version` w `custom_components/trv_offset/manifest.json`.
 2. Commit, a potem `git tag vX.Y.Z && git push --tags`.
 3. Workflow `Release` sprawdzi zgodność tagu z manifestem i utworzy release, a HACS pokaże aktualizację.
+
+Zamiast punktu 2 możesz na GitHubie wejść w **Releases → Draft a new release**, wpisać nowy tag `vX.Y.Z` (target `main`) i kliknąć **Publish**. Workflow uzupełni wtedy opis release'u.
