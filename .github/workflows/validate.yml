@@ -15,8 +15,9 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
-          # Brand icons are only needed for the HACS default store.
-          ignore: brands
+          # brands/description/topics only matter for the HACS default store;
+          # description and topics are repo settings (GitHub "About" box).
+          ignore: brands description topics
 
   hassfest:
     name: hassfest
