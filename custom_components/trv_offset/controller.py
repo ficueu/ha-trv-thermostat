@@ -1,0 +1,826 @@
+"""Room controller - glue between Home Assistant and the pure logic.
+
+Zigbee traffic policy
+---------------------
+* The evaluation loop runs on every room-sensor update and every 60 s, but it
+  only *decides*. Nothing is sent unless the desired value of an actuator
+  (TRV mode, TRV setpoint, offset number) changes.
+* Before every write the current entity state is compared with the desired
+  value; if the TRV already has it, nothing is sent.
+* After a write we wait ``VERIFY_DELAY_S`` for the TRV to report back. If it
+  doesn't, we retry up to ``MAX_ATTEMPTS`` times, then at most every
+  ``BACKOFF_S``. This also repairs TRVs that rebooted or were changed by hand.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections import deque
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+import logging
+from typing import Any
+
+from homeassistant.components.climate import (
+    ATTR_HVAC_MODE,
+    ATTR_HVAC_MODES,
+    ATTR_MIN_TEMP,
+    ATTR_MAX_TEMP,
+    ATTR_TARGET_TEMP_STEP,
+    DOMAIN as CLIMATE_DOMAIN,
+    PRESET_COMFORT,
+    PRESET_ECO,
+    SERVICE_SET_HVAC_MODE,
+    SERVICE_SET_TEMPERATURE,
+    HVACMode,
+)
+from homeassistant.components.number import (
+    ATTR_MAX,
+    ATTR_MIN,
+    ATTR_STEP,
+    ATTR_VALUE,
+    DOMAIN as NUMBER_DOMAIN,
+    SERVICE_SET_VALUE,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import (
+    ATTR_ENTITY_ID,
+    ATTR_TEMPERATURE,
+    STATE_ON,
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
+from homeassistant.core import (
+    CALLBACK_TYPE,
+    Event,
+    EventStateChangedData,
+    HomeAssistant,
+    State,
+    callback,
+)
+from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+    async_track_time_interval,
+)
+from homeassistant.helpers.start import async_at_started
+from homeassistant.helpers.storage import Store
+from homeassistant.util import dt as dt_util
+
+from .const import (
+    ADOPT_GUARD_S,
+    BACKOFF_S,
+    CONF_ADOPT_TRV_SETPOINT,
+    CONF_FALLBACK_OFFSET,
+    CONF_OFFSETS,
+    CONF_SENSOR_TIMEOUT,
+    CONF_TEMP_SENSOR,
+    CONF_TRVS,
+    CONF_WINDOW_CLOSE_DELAY,
+    CONF_WINDOW_OPEN_DELAY,
+    CONF_WINDOWS,
+    DEFAULT_ADOPT_TRV_SETPOINT,
+    DEFAULT_FALLBACK_OFFSET,
+    DEFAULT_SENSOR_TIMEOUT,
+    DEFAULT_SETTINGS,
+    DEFAULT_WINDOW_CLOSE_DELAY,
+    DEFAULT_WINDOW_OPEN_DELAY,
+    DOMAIN,
+    MAX_ATTEMPTS,
+    PRESET_SCHEDULE,
+    S_DAY_START,
+    S_DAY_TEMP,
+    S_HYST_OFF,
+    S_HYST_ON,
+    S_IDLE_OFFSET,
+    S_L1_OFFSET,
+    S_L2_OFFSET,
+    S_L2_THRESHOLD,
+    S_L3_OFFSET,
+    S_L3_THRESHOLD,
+    S_LEVEL_HYST,
+    S_LOOKAHEAD,
+    S_MIN_HOLD,
+    S_NIGHT_START,
+    S_NIGHT_TEMP,
+    SENSOR_BAD_GRACE_S,
+    SETPOINT_MIN_TOLERANCE,
+    STARTUP_GRACE_S,
+    STORAGE_VERSION,
+    TICK_INTERVAL_S,
+    TREND_HISTORY_S,
+    TREND_WINDOW_S,
+    VERIFY_DELAY_S,
+    WRITE_SPACING_S,
+    parse_time,
+)
+from .logic import (
+    Decision,
+    LoopSettings,
+    LoopState,
+    Status,
+    apply_decision,
+    build_thresholds,
+    compute_slope,
+    decide,
+    is_day,
+    next_transition,
+    quantize,
+)
+
+_LOGGER = logging.getLogger(__name__)
+
+BAD_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN, None)
+KIND_MODE = "mode"
+KIND_SETPOINT = "setpoint"
+KIND_OFFSET = "offset"
+SETPOINT_MIN = "min"  # sentinel: emulate "off" with the TRV's min_temp
+TEMP_MIN = 5.0
+TEMP_MAX = 30.0
+
+
+@dataclass
+class Actuator:
+    """One writable thing on a TRV (mode, setpoint or offset)."""
+
+    entity_id: str
+    kind: str
+    desired: Any = None  # abstract desired value (resolved per-TRV on apply)
+    written: Any = None  # last concrete value we sent / saw confirmed
+    last_write: float = 0.0
+    attempts: int = 0
+    warned: bool = False
+
+
+def _now_ts() -> float:
+    return dt_util.utcnow().timestamp()
+
+
+def _float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+class RoomController:
+    """Controls all TRVs of one room."""
+
+    def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
+        """Initialise from a config entry."""
+        self.hass = hass
+        self.entry = entry
+        cfg = {**entry.data, **entry.options}
+        self.temp_sensor: str = cfg[CONF_TEMP_SENSOR]
+        self.trvs: list[str] = list(cfg.get(CONF_TRVS) or [])
+        self.offset_entities: list[str] = list(cfg.get(CONF_OFFSETS) or [])
+        self.windows: list[str] = list(cfg.get(CONF_WINDOWS) or [])
+        self.window_open_delay = float(cfg.get(CONF_WINDOW_OPEN_DELAY, DEFAULT_WINDOW_OPEN_DELAY))
+        self.window_close_delay = float(
+            cfg.get(CONF_WINDOW_CLOSE_DELAY, DEFAULT_WINDOW_CLOSE_DELAY)
+        )
+        self.sensor_timeout_s = float(cfg.get(CONF_SENSOR_TIMEOUT, DEFAULT_SENSOR_TIMEOUT)) * 60
+        self.adopt_trv_setpoint = bool(cfg.get(CONF_ADOPT_TRV_SETPOINT, DEFAULT_ADOPT_TRV_SETPOINT))
+        self.fallback_offset = float(cfg.get(CONF_FALLBACK_OFFSET, DEFAULT_FALLBACK_OFFSET))
+
+        self._store: Store[dict[str, Any]] = Store(
+            hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
+        )
+        self.settings: dict[str, Any] = dict(DEFAULT_SETTINGS)
+        self.hvac_mode: HVACMode = HVACMode.HEAT
+        self.preset: str = PRESET_SCHEDULE
+        self.override_temp: float | None = None
+        self.override_until: datetime | None = None
+
+        self._loop = LoopState()
+        self._samples: deque[tuple[float, float]] = deque()
+        self._window_raw = False
+        self._window_raw_since = 0.0
+        self.window_open = False
+
+        self.decision: Decision | None = None
+        self.target: float | None = None
+        self.target_source: str | None = None
+        self.room_temp: float | None = None
+        self.slope: float | None = None
+        self.commanded_offset: float | None = None
+        self.last_level_change: datetime | None = None
+        self.writes = 0
+
+        self._modes = {e: Actuator(e, KIND_MODE) for e in self.trvs}
+        self._setpoints = {e: Actuator(e, KIND_SETPOINT) for e in self.trvs}
+        self._offsets = {e: Actuator(e, KIND_OFFSET) for e in self.offset_entities}
+
+        self._started = False
+        self._started_at = 0.0
+        self._last_temp: float | None = None
+        self._last_temp_ts = 0.0
+        self._temp_bad_since: float | None = None
+        self._listeners: list[CALLBACK_TYPE] = []
+        self._unsubs: list[CALLBACK_TYPE] = []
+        self._window_timer: CALLBACK_TYPE | None = None
+        self._apply_task: asyncio.Task | None = None
+        self._apply_again = False
+        self._snapshot: tuple | None = None
+
+    # ------------------------------------------------------------------ #
+    # Lifecycle
+    # ------------------------------------------------------------------ #
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Device for all entities of this room."""
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.entry.entry_id)},
+            name=self.entry.title,
+            manufacturer="TRV Offset Thermostat",
+            model="Room controller",
+            entry_type=DeviceEntryType.SERVICE,
+        )
+
+    async def async_load(self) -> None:
+        """Restore persisted settings and runtime state."""
+        data = await self._store.async_load() or {}
+        self.settings.update(data.get("settings", {}))
+        try:
+            self.hvac_mode = HVACMode(data.get("hvac_mode", HVACMode.HEAT))
+        except ValueError:
+            self.hvac_mode = HVACMode.HEAT
+        if data.get("preset") in (PRESET_SCHEDULE, PRESET_COMFORT, PRESET_ECO):
+            self.preset = data["preset"]
+        self.override_temp = _float(data.get("override_temp"))
+        until = data.get("override_until")
+        self.override_until = dt_util.parse_datetime(until) if until else None
+        self._loop.level = int(data.get("level", 0) or 0)
+        self._loop.level_since = _float(data.get("level_since"))
+
+    def _data_to_save(self) -> dict[str, Any]:
+        return {
+            "settings": self.settings,
+            "hvac_mode": str(self.hvac_mode),
+            "preset": self.preset,
+            "override_temp": self.override_temp,
+            "override_until": self.override_until.isoformat() if self.override_until else None,
+            "level": self._loop.level,
+            "level_since": self._loop.level_since,
+        }
+
+    @callback
+    def _save(self) -> None:
+        self._store.async_delay_save(self._data_to_save, 5)
+
+    @callback
+    def async_start(self) -> None:
+        """Subscribe to everything and start evaluating once HA is up."""
+        hass = self.hass
+        self._unsubs.append(async_track_state_change_event(hass, [self.temp_sensor], self._on_temp))
+        if self.windows:
+            self._unsubs.append(async_track_state_change_event(hass, self.windows, self._on_window))
+        if self.trvs:
+            self._unsubs.append(async_track_state_change_event(hass, self.trvs, self._on_trv))
+        if self.offset_entities:
+            self._unsubs.append(
+                async_track_state_change_event(hass, self.offset_entities, self._on_actuator)
+            )
+        self._unsubs.append(
+            async_track_time_interval(hass, self._on_tick, timedelta(seconds=TICK_INTERVAL_S))
+        )
+        self._unsubs.append(async_at_started(hass, self._on_started))
+
+    async def async_stop(self) -> None:
+        """Unsubscribe and flush storage."""
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()
+        if self._window_timer:
+            self._window_timer()
+            self._window_timer = None
+        if self._apply_task and not self._apply_task.done():
+            self._apply_task.cancel()
+        await self._store.async_save(self._data_to_save())
+
+    async def async_remove_store(self) -> None:
+        """Delete persisted data (entry removed)."""
+        await self._store.async_remove()
+
+    @callback
+    def async_add_listener(self, update_cb: CALLBACK_TYPE) -> CALLBACK_TYPE:
+        """Register an entity update callback."""
+        self._listeners.append(update_cb)
+
+        @callback
+        def _remove() -> None:
+            self._listeners.remove(update_cb)
+
+        return _remove
+
+    @callback
+    def _notify(self, force: bool = False) -> None:
+        d = self.decision
+        snap = (
+            d.status if d else None,
+            d.level if d else None,
+            d.reason if d else None,
+            self.target,
+            self.target_source,
+            self.room_temp,
+            self.hvac_mode,
+            self.preset,
+            self.override_temp,
+            self.override_until,
+            self.window_open,
+            self.commanded_offset,
+        )
+        if not force and snap == self._snapshot:
+            return
+        self._snapshot = snap
+        for update_cb in list(self._listeners):
+            update_cb()
+
+    # ------------------------------------------------------------------ #
+    # Event handlers
+    # ------------------------------------------------------------------ #
+
+    async def _on_started(self, _hass: HomeAssistant) -> None:
+        self._started = True
+        now = _now_ts()
+        self._started_at = now
+        state = self.hass.states.get(self.temp_sensor)
+        if state is not None and (val := _float(state.state)) is not None:
+            self._samples.append((state.last_updated.timestamp(), val))
+        self._window_raw = self._window_any_open()
+        self._window_raw_since = now - 86400  # already settled
+        self.window_open = self._window_raw
+        self.async_evaluate("startup")
+
+    @callback
+    def _on_tick(self, _now: datetime) -> None:
+        self.async_evaluate("tick")
+
+    @callback
+    def _on_temp(self, event: Event[EventStateChangedData]) -> None:
+        new = event.data["new_state"]
+        if new is not None and (val := _float(new.state)) is not None:
+            self._samples.append((_now_ts(), val))
+        self.async_evaluate("temperature")
+
+    def _window_any_open(self) -> bool:
+        for eid in self.windows:
+            state = self.hass.states.get(eid)
+            if state is not None and state.state == STATE_ON:
+                return True
+        return False
+
+    @callback
+    def _on_window(self, _event: Event[EventStateChangedData]) -> None:
+        raw = self._window_any_open()
+        if raw == self._window_raw:
+            return
+        self._window_raw = raw
+        self._window_raw_since = _now_ts()
+        delay = self.window_open_delay if raw else self.window_close_delay
+        if self._window_timer:
+            self._window_timer()
+
+        @callback
+        def _fire(_now: datetime) -> None:
+            self._window_timer = None
+            self.async_evaluate("window")
+
+        self._window_timer = async_call_later(self.hass, delay + 0.5, _fire)
+        self.async_evaluate("window raw")
+
+    @callback
+    def _on_actuator(self, event: Event[EventStateChangedData]) -> None:
+        """Offset entity came back online -> push pending values."""
+        old, new = event.data["old_state"], event.data["new_state"]
+        if (
+            (old is None or old.state in BAD_STATES)
+            and new is not None
+            and new.state not in BAD_STATES
+        ):
+            self._schedule_apply()
+
+    @callback
+    def _on_trv(self, event: Event[EventStateChangedData]) -> None:
+        old, new = event.data["old_state"], event.data["new_state"]
+        if new is None or new.state in BAD_STATES:
+            return
+        if old is None or old.state in BAD_STATES:
+            self._schedule_apply()
+            return
+        if not (self.adopt_trv_setpoint and self._started and self.decision):
+            return
+        if self.decision.status not in (Status.IDLE, Status.HEATING, Status.FALLBACK):
+            return
+        if old.state != new.state or new.state == HVACMode.OFF:
+            return
+        old_t = _float(old.attributes.get(ATTR_TEMPERATURE))
+        new_t = _float(new.attributes.get(ATTR_TEMPERATURE))
+        if old_t is None or new_t is None or abs(old_t - new_t) < 0.01:
+            return
+        act = self._setpoints.get(new.entity_id)
+        if act is None:
+            return
+        if _now_ts() - act.last_write < ADOPT_GUARD_S:
+            return  # most likely our own write being confirmed (or a stale report)
+        if act.written is not None and abs(new_t - float(act.written)) < 0.01:
+            return
+        wanted = self._resolve_value(act, new)
+        if wanted is not None and self._matches(act, new, wanted):
+            return
+        _LOGGER.info(
+            "%s: setpoint changed on %s (%s -> %s), taking it as manual override",
+            self.entry.title,
+            new.entity_id,
+            old_t,
+            new_t,
+        )
+        self._set_override(new_t)
+        self.async_evaluate("trv setpoint")
+
+    # ------------------------------------------------------------------ #
+    # User actions (from entities)
+    # ------------------------------------------------------------------ #
+
+    @callback
+    def async_set_hvac_mode(self, mode: HVACMode) -> None:
+        """Turn the room on (HEAT) or off."""
+        self.hvac_mode = mode
+        self._save()
+        self.async_evaluate("hvac mode")
+
+    @callback
+    def async_set_preset(self, preset: str) -> None:
+        """Change preset; clears any override."""
+        self.preset = preset
+        self.override_temp = None
+        self.override_until = None
+        self._save()
+        self.async_evaluate("preset")
+
+    @callback
+    def async_set_target(self, temp: float) -> None:
+        """Target set from the climate card."""
+        temp = max(TEMP_MIN, min(TEMP_MAX, float(temp)))
+        if self.preset == PRESET_COMFORT:
+            self.settings[S_DAY_TEMP] = temp
+            self.override_temp = self.override_until = None
+        elif self.preset == PRESET_ECO:
+            self.settings[S_NIGHT_TEMP] = temp
+            self.override_temp = self.override_until = None
+        else:
+            scheduled = self._scheduled_target(dt_util.now())
+            if abs(temp - scheduled) < 0.05:
+                self.override_temp = self.override_until = None
+            else:
+                self._set_override(temp)
+        self._save()
+        self.async_evaluate("set target")
+
+    @callback
+    def async_set_setting(self, key: str, value: Any) -> None:
+        """Change one runtime setting (number/time entities)."""
+        self.settings[key] = value
+        self._save()
+        self.async_evaluate(f"setting {key}")
+
+    @callback
+    def _set_override(self, temp: float) -> None:
+        self.override_temp = max(TEMP_MIN, min(TEMP_MAX, float(temp)))
+        if self.preset == PRESET_SCHEDULE:
+            self.override_until = next_transition(
+                dt_util.now(),
+                parse_time(self.settings[S_DAY_START]),
+                parse_time(self.settings[S_NIGHT_START]),
+            )
+        else:
+            self.override_until = None
+        self._save()
+
+    # ------------------------------------------------------------------ #
+    # Evaluation
+    # ------------------------------------------------------------------ #
+
+    def _scheduled_target(self, now_dt: datetime) -> float:
+        day = is_day(
+            now_dt.time(),
+            parse_time(self.settings[S_DAY_START]),
+            parse_time(self.settings[S_NIGHT_START]),
+        )
+        return float(self.settings[S_DAY_TEMP] if day else self.settings[S_NIGHT_TEMP])
+
+    def _resolve_target(self, now_dt: datetime) -> tuple[float, str]:
+        if self.override_temp is not None:
+            return self.override_temp, "override"
+        if self.preset == PRESET_COMFORT:
+            return float(self.settings[S_DAY_TEMP]), "comfort"
+        if self.preset == PRESET_ECO:
+            return float(self.settings[S_NIGHT_TEMP]), "eco"
+        day = is_day(
+            now_dt.time(),
+            parse_time(self.settings[S_DAY_START]),
+            parse_time(self.settings[S_NIGHT_START]),
+        )
+        if day:
+            return float(self.settings[S_DAY_TEMP]), "day"
+        return float(self.settings[S_NIGHT_TEMP]), "night"
+
+    def _read_room_temp(self, now: float) -> float | None:
+        """Room temperature, or None if the sensor is considered lost.
+
+        * unavailable/unknown for less than SENSOR_BAD_GRACE_S -> keep last value
+          (Z2M availability blips must not cause two rounds of writes)
+        * no report (not even an unchanged one) for sensor_timeout -> lost
+        """
+        state = self.hass.states.get(self.temp_sensor)
+        val = None if state is None or state.state in BAD_STATES else _float(state.state)
+        if val is not None:
+            last = getattr(state, "last_reported", None) or state.last_updated
+            self._last_temp = val
+            self._last_temp_ts = last.timestamp()
+            self._temp_bad_since = None
+        elif self._temp_bad_since is None:
+            self._temp_bad_since = now
+        if self._last_temp is None:
+            return None
+        if self._temp_bad_since is not None and now - self._temp_bad_since >= SENSOR_BAD_GRACE_S:
+            return None
+        if now - self._last_temp_ts > self.sensor_timeout_s:
+            return None
+        return self._last_temp
+
+    def _update_window(self, now: float) -> None:
+        if not self.windows:
+            self.window_open = False
+            return
+        elapsed = now - self._window_raw_since
+        if self._window_raw and not self.window_open and elapsed >= self.window_open_delay:
+            self.window_open = True
+        elif not self._window_raw and self.window_open and elapsed >= self.window_close_delay:
+            self.window_open = False
+
+    def loop_settings(self) -> LoopSettings:
+        """Build LoopSettings from current runtime settings."""
+        s = self.settings
+        return LoopSettings(
+            hyst_on=float(s[S_HYST_ON]),
+            hyst_off=float(s[S_HYST_OFF]),
+            thresholds=build_thresholds(float(s[S_L2_THRESHOLD]), float(s[S_L3_THRESHOLD])),
+            level_hyst=float(s[S_LEVEL_HYST]),
+            min_hold_s=float(s[S_MIN_HOLD]) * 60.0,
+            lookahead_min=float(s[S_LOOKAHEAD]),
+        )
+
+    def offset_for_level(self, level: int) -> float:
+        """Map a heating level to a calibration offset."""
+        key = {0: S_IDLE_OFFSET, 1: S_L1_OFFSET, 2: S_L2_OFFSET, 3: S_L3_OFFSET}[level]
+        return float(self.settings[key])
+
+    @callback
+    def async_evaluate(self, reason: str = "") -> None:
+        """Run one control step. Cheap - no I/O unless an output changes."""
+        if not self._started:
+            return
+        now_dt = dt_util.now()
+        now = now_dt.timestamp()
+
+        if self.override_until is not None and now_dt >= self.override_until:
+            _LOGGER.debug("%s: override expired", self.entry.title)
+            self.override_temp = self.override_until = None
+            self._save()
+
+        target, source = self._resolve_target(now_dt)
+        temp = self._read_room_temp(now)
+        self._update_window(now)
+        while self._samples and self._samples[0][0] < now - TREND_HISTORY_S:
+            self._samples.popleft()
+        slope = compute_slope(list(self._samples), now, TREND_WINDOW_S)
+
+        decision = decide(
+            temp=temp,
+            target=target,
+            state=self._loop,
+            settings=self.loop_settings(),
+            now=now,
+            active=self.hvac_mode != HVACMode.OFF,
+            window_open=self.window_open,
+            slope_per_h=slope,
+        )
+        prev = self.decision
+        if apply_decision(self._loop, decision, now):
+            self.last_level_change = now_dt
+            self._save()
+        if prev is None or prev.status != decision.status or prev.level != decision.level:
+            _LOGGER.info(
+                "%s: %s level %s (T=%s target=%s/%s) - %s [%s]",
+                self.entry.title,
+                decision.status,
+                decision.level,
+                temp,
+                target,
+                source,
+                decision.reason,
+                reason,
+            )
+
+        self.decision = decision
+        self.target, self.target_source = target, source
+        self.room_temp, self.slope = temp, slope
+        self._update_desired(decision, target)
+        self._schedule_apply()
+        self._notify()
+
+    def _update_desired(self, decision: Decision, target: float) -> None:
+        if decision.status == Status.FALLBACK and _now_ts() - self._started_at < STARTUP_GRACE_S:
+            # Right after a restart the room sensor may simply not have reported
+            # yet - leave the TRVs exactly as they are instead of writing twice.
+            for act in (*self._modes.values(), *self._setpoints.values(), *self._offsets.values()):
+                act.desired = None
+            self.commanded_offset = None
+            return
+        if decision.status in (Status.OFF, Status.WINDOW):
+            for act in self._modes.values():
+                act.desired = HVACMode.OFF
+            for act in self._setpoints.values():
+                act.desired = SETPOINT_MIN  # only used if the TRV has no "off"
+            for act in self._offsets.values():
+                act.desired = None  # leave untouched, saves traffic
+            self.commanded_offset = None
+            return
+        offset = (
+            self.fallback_offset
+            if decision.status == Status.FALLBACK
+            else self.offset_for_level(decision.level)
+        )
+        for act in self._modes.values():
+            act.desired = HVACMode.HEAT
+        for act in self._setpoints.values():
+            act.desired = target
+        for act in self._offsets.values():
+            act.desired = offset
+        self.commanded_offset = offset
+
+    # ------------------------------------------------------------------ #
+    # Actuation
+    # ------------------------------------------------------------------ #
+
+    @callback
+    def _schedule_apply(self) -> None:
+        if self._apply_task is not None and not self._apply_task.done():
+            self._apply_again = True
+            return
+        self._apply_task = self.entry.async_create_background_task(
+            self.hass, self._async_apply(), f"{DOMAIN}_apply_{self.entry.entry_id}"
+        )
+
+    async def _async_apply(self) -> None:
+        while True:
+            self._apply_again = False
+            # Order matters: mode first, then setpoint, then offset.
+            for act in (*self._modes.values(), *self._setpoints.values(), *self._offsets.values()):
+                await self._apply_one(act)
+            if not self._apply_again:
+                return
+
+    def _resolve_value(self, act: Actuator, state: State) -> Any:
+        """Turn the abstract desired value into a concrete one for this entity."""
+        if act.desired is None:
+            return None
+        attrs = state.attributes
+        if act.kind == KIND_MODE:
+            modes = attrs.get(ATTR_HVAC_MODES) or []
+            return act.desired if act.desired in modes else None
+        if act.kind == KIND_SETPOINT:
+            modes = attrs.get(ATTR_HVAC_MODES) or []
+            if act.desired == SETPOINT_MIN:
+                if HVACMode.OFF in modes:
+                    return None
+                return _float(attrs.get(ATTR_MIN_TEMP)) or TEMP_MIN
+            return quantize(
+                float(act.desired),
+                _float(attrs.get(ATTR_TARGET_TEMP_STEP)) or 0.5,
+                _float(attrs.get(ATTR_MIN_TEMP)),
+                _float(attrs.get(ATTR_MAX_TEMP)),
+            )
+        # offset number
+        value = quantize(
+            float(act.desired),
+            _float(attrs.get(ATTR_STEP)),
+            _float(attrs.get(ATTR_MIN)),
+            _float(attrs.get(ATTR_MAX)),
+        )
+        if abs(value - float(act.desired)) > 0.01 and not act.warned:
+            act.warned = True
+            _LOGGER.warning(
+                "%s: offset %s clamped to %s by %s range (%s..%s)",
+                self.entry.title,
+                act.desired,
+                value,
+                act.entity_id,
+                attrs.get(ATTR_MIN),
+                attrs.get(ATTR_MAX),
+            )
+        return value
+
+    @staticmethod
+    def _matches(act: Actuator, state: State, value: Any) -> bool:
+        attrs = state.attributes
+        if act.kind == KIND_MODE:
+            return state.state == value
+        if act.kind == KIND_SETPOINT:
+            actual = _float(attrs.get(ATTR_TEMPERATURE))
+            if actual is None:
+                return False
+            step = _float(attrs.get(ATTR_TARGET_TEMP_STEP)) or 0.5
+            return abs(actual - float(value)) < max(SETPOINT_MIN_TOLERANCE, step / 2 + 0.001)
+        actual = _float(state.state)
+        if actual is None:
+            return False
+        step = _float(attrs.get(ATTR_STEP)) or 0.1
+        return abs(actual - float(value)) < max(0.05, step / 2 + 0.001)
+
+    async def _apply_one(self, act: Actuator) -> None:
+        state = self.hass.states.get(act.entity_id)
+        if state is None or state.state in BAD_STATES:
+            return
+        value = self._resolve_value(act, state)
+        if value is None:
+            act.attempts = 0
+            return
+        if self._matches(act, state, value):
+            act.written = value
+            act.attempts = 0
+            return
+        now = _now_ts()
+        if act.written == value:
+            if now - act.last_write < VERIFY_DELAY_S:
+                return  # give the TRV time to confirm
+            if act.attempts >= MAX_ATTEMPTS and now - act.last_write < BACKOFF_S:
+                return
+        else:
+            act.attempts = 0
+        if act.attempts == MAX_ATTEMPTS:
+            _LOGGER.warning(
+                "%s: %s does not confirm %s=%s after %d attempts, backing off to every %d min",
+                self.entry.title,
+                act.entity_id,
+                act.kind,
+                value,
+                MAX_ATTEMPTS,
+                BACKOFF_S // 60,
+            )
+        await self._write(act, value)
+        act.written = value
+        act.last_write = _now_ts()
+        act.attempts += 1
+        await asyncio.sleep(WRITE_SPACING_S)
+
+    async def _write(self, act: Actuator, value: Any) -> None:
+        if act.kind == KIND_MODE:
+            domain, service, data = CLIMATE_DOMAIN, SERVICE_SET_HVAC_MODE, {ATTR_HVAC_MODE: value}
+        elif act.kind == KIND_SETPOINT:
+            domain, service, data = (
+                CLIMATE_DOMAIN,
+                SERVICE_SET_TEMPERATURE,
+                {ATTR_TEMPERATURE: value},
+            )
+        else:
+            domain, service, data = NUMBER_DOMAIN, SERVICE_SET_VALUE, {ATTR_VALUE: value}
+        _LOGGER.debug("%s: write %s %s=%s", self.entry.title, act.entity_id, act.kind, value)
+        self.writes += 1
+        try:
+            async with asyncio.timeout(30):
+                await self.hass.services.async_call(
+                    domain, service, {ATTR_ENTITY_ID: act.entity_id, **data}, blocking=True
+                )
+        except Exception as err:  # noqa: BLE001 - any failure is retried later
+            _LOGGER.warning(
+                "%s: writing %s=%s to %s failed: %s",
+                self.entry.title,
+                act.kind,
+                value,
+                act.entity_id,
+                err,
+            )
+        self._notify(force=True)
+
+    # ------------------------------------------------------------------ #
+    # Diagnostics
+    # ------------------------------------------------------------------ #
+
+    @property
+    def pending_writes(self) -> list[str]:
+        """Actuators whose state does not (yet) match the desired value."""
+        out = []
+        for act in (*self._modes.values(), *self._setpoints.values(), *self._offsets.values()):
+            state = self.hass.states.get(act.entity_id)
+            if state is None or state.state in BAD_STATES:
+                if act.desired is not None:
+                    out.append(f"{act.entity_id} (unavailable)")
+                continue
+            value = self._resolve_value(act, state)
+            if value is not None and not self._matches(act, state, value):
+                out.append(f"{act.entity_id} {act.kind}={value}")
+        return out

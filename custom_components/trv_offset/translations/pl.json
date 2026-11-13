@@ -1,0 +1,106 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Dodaj pomieszczenie",
+        "data": {
+          "name": "Nazwa pomieszczenia",
+          "temperature_sensor": "Czujnik temperatury w pomieszczeniu",
+          "trvs": "Głowice termostatyczne"
+        },
+        "data_description": {
+          "temperature_sensor": "Jedyna temperatura brana pod uwagę przy sterowaniu.",
+          "trvs": "Wszystkie głowice Zigbee w tym pomieszczeniu - dostają ten sam setpoint i offset."
+        }
+      },
+      "offsets": {
+        "title": "Encje offsetu",
+        "description": "Encje number z kalibracją (offsetem) głowic. Wykryte automatycznie: {detected}",
+        "data": {
+          "offset_entities": "Encje offsetu / kalibracji",
+          "window_sensors": "Czujniki okna (opcjonalnie)"
+        }
+      }
+    },
+    "error": {
+      "no_offsets": "Wybierz co najmniej jedną encję offsetu."
+    },
+    "abort": {
+      "already_configured": "Te głowice są już przypisane do innego pomieszczenia."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Opcje pomieszczenia",
+        "data": {
+          "temperature_sensor": "Czujnik temperatury w pomieszczeniu",
+          "trvs": "Głowice",
+          "offset_entities": "Encje offsetu / kalibracji",
+          "window_sensors": "Czujniki okna",
+          "window_open_delay": "Opóźnienie otwarcia okna",
+          "window_close_delay": "Opóźnienie zamknięcia okna",
+          "sensor_timeout": "Timeout czujnika pokojowego",
+          "fallback_offset": "Offset awaryjny (brak czujnika)",
+          "adopt_trv_setpoint": "Zmiana temperatury na głowicy = tymczasowe nadpisanie"
+        },
+        "data_description": {
+          "sensor_timeout": "Brak raportu z czujnika przez ten czas = utrata czujnika, głowice regulują same z offsetem awaryjnym.",
+          "adopt_trv_setpoint": "Kręcenie pokrętłem głowicy ustawia nadpisanie do najbliższej zmiany dzień/noc. Wyłączone = integracja przywraca swoją wartość."
+        }
+      }
+    },
+    "error": {
+      "no_offsets": "Wybierz co najmniej jedną encję offsetu."
+    }
+  },
+  "entity": {
+    "climate": {
+      "room": {
+        "state_attributes": {
+          "preset_mode": {
+            "state": {
+              "schedule": "Harmonogram",
+              "comfort": "Dzień",
+              "eco": "Noc"
+            }
+          }
+        }
+      }
+    },
+    "number": {
+      "day_temp": { "name": "Temperatura dzień" },
+      "night_temp": { "name": "Temperatura noc" },
+      "hyst_on": { "name": "Histereza - start poniżej zadanej" },
+      "hyst_off": { "name": "Histereza - stop powyżej zadanej" },
+      "level_hyst": { "name": "Histereza poziomów" },
+      "idle_offset": { "name": "Offset - spoczynek (poziom 0)" },
+      "level1_offset": { "name": "Offset - poziom 1" },
+      "level2_offset": { "name": "Offset - poziom 2" },
+      "level2_threshold": { "name": "Poziom 2 powyżej niedogrzania" },
+      "level3_offset": { "name": "Offset - poziom 3" },
+      "level3_threshold": { "name": "Poziom 3 powyżej niedogrzania (0 = wył.)" },
+      "min_hold": { "name": "Minimalny czas między zmianami" },
+      "lookahead": { "name": "Wyprzedzenie trendu (0 = wył.)" }
+    },
+    "time": {
+      "day_start": { "name": "Początek dnia" },
+      "night_start": { "name": "Początek nocy" }
+    },
+    "sensor": {
+      "level": { "name": "Poziom grzania" },
+      "status": {
+        "name": "Status",
+        "state": {
+          "off": "Wyłączone",
+          "idle": "Bezczynny",
+          "heating": "Grzanie",
+          "window_open": "Okno otwarte",
+          "sensor_lost": "Brak czujnika"
+        }
+      },
+      "offset": { "name": "Zadany offset" },
+      "writes": { "name": "Zapisy Zigbee" }
+    }
+  }
+}

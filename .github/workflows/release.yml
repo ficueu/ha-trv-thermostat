@@ -1,0 +1,24 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Manifest version must match the tag
+        run: |
+          V=$(jq -r .version custom_components/trv_offset/manifest.json)
+          if [ "v$V" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::manifest.json version $V does not match tag $GITHUB_REF_NAME"
+            exit 1
+          fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true

@@ -1,0 +1,13 @@
+{
+  "domain": "trv_offset",
+  "name": "TRV Offset Thermostat",
+  "codeowners": ["@ficueu"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/ficueu/ha-trv-thermostat",
+  "integration_type": "service",
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/ficueu/ha-trv-thermostat/issues",
+  "requirements": [],
+  "version": "1.0.0"
+}

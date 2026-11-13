@@ -1,0 +1,5 @@
+{
+  "name": "TRV Offset Thermostat",
+  "render_readme": true,
+  "homeassistant": "2024.11.0"
+}
