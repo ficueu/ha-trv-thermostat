@@ -91,6 +91,8 @@ Zmiana temperatury na karcie termostatu:
 - w presecie **Dzień** / **Noc** zmienia na stałe temperaturę dzienną / nocną,
 - przy włączonym **Poza domem** zmienia temperaturę poza domem.
 
+Atrybuty `climate` do debugowania: `status`, `level`, `offset`, `deficit`, `trend` (°C/h), `reason`, `target_source` (`day`/`night`/`comfort`/`eco`/`override`/`away`), `override_until`, `last_level_change`, `away`, `outdoor_temperature`, `outdoor_warm`. Atrybuty `deficit`, `trend` i `reason` nie trafiają do recordera.
+
 ### Poza domem dla całego mieszkania
 
 Przełącznik jest w każdym pomieszczeniu osobno. Żeby mieć jeden dla całego mieszkania, dodaj pomocnika **Ustawienia → Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Grupa → Grupa przełączników** i dodaj do niej wszystkie `switch.*_poza_domem`. Przełączenie grupy przełącza wszystkie pokoje.
@@ -98,8 +100,6 @@ Przełącznik jest w każdym pomieszczeniu osobno. Żeby mieć jeden dla całego
 ### Temperatura zewnętrzna
 
 Czujnik wybierasz przy dodawaniu pomieszczenia albo w **Konfiguruj**. Może to być czujnik temperatury albo encja pogody (`weather.*`, brany jest jej atrybut `temperature`). Bez czujnika funkcja jest wyłączona i encja progu nie powstaje. Gdy czujnik jest niedostępny, zostaje ostatni stan, więc chwilowy brak odczytu nie przełącza głowic.
-
-Atrybuty `climate` do debugowania: `status`, `level`, `offset`, `deficit`, `trend` (°C/h), `reason`, `target_source` (`day`/`night`/`comfort`/`eco`/`override`/`away`), `override_until`, `last_level_change`, `away`, `outdoor_temperature`, `outdoor_warm`. Atrybuty `deficit`, `trend` i `reason` nie trafiają do recordera.
 
 ## Wskazówki
 
