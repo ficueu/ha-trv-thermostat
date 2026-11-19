@@ -63,6 +63,14 @@
     }
   },
   "entity": {
+    "button": {
+      "boost": {
+        "name": "Boost"
+      },
+      "boost_stop": {
+        "name": "Zakończ boost"
+      }
+    },
     "climate": {
       "room": {
         "state_attributes": {
@@ -86,6 +94,9 @@
       "away_temp": {
         "name": "Temperatura poza domem"
       },
+      "boost_duration": {
+        "name": "Czas boostu"
+      },
       "outdoor_cutoff": {
         "name": "Wyłącz grzanie przy temperaturze zewnętrznej"
       },
@@ -98,20 +109,8 @@
       "level_hyst": {
         "name": "Histereza poziomów"
       },
-      "idle_offset": {
-        "name": "Offset - spoczynek (poziom 0)"
-      },
-      "level1_offset": {
-        "name": "Offset - poziom 1"
-      },
-      "level2_offset": {
-        "name": "Offset - poziom 2"
-      },
       "level2_threshold": {
         "name": "Poziom 2 powyżej niedogrzania"
-      },
-      "level3_offset": {
-        "name": "Offset - poziom 3"
       },
       "level3_threshold": {
         "name": "Poziom 3 powyżej niedogrzania (0 = wył.)"
@@ -121,6 +120,18 @@
       },
       "lookahead": {
         "name": "Wyprzedzenie trendu (0 = wył.)"
+      },
+      "trv_offset_l0": {
+        "name": "{trv} offset - spoczynek (poziom 0)"
+      },
+      "trv_offset_l1": {
+        "name": "{trv} offset - poziom 1"
+      },
+      "trv_offset_l2": {
+        "name": "{trv} offset - poziom 2"
+      },
+      "trv_offset_l3": {
+        "name": "{trv} offset - poziom 3"
       }
     },
     "switch": {
@@ -147,12 +158,13 @@
           "idle": "Bezczynny",
           "heating": "Grzanie",
           "window_open": "Okno otwarte",
+          "boost": "Boost",
           "outdoor_warm": "Ciepło na zewnątrz",
           "sensor_lost": "Brak czujnika"
         }
       },
-      "offset": {
-        "name": "Zadany offset"
+      "trv_offset": {
+        "name": "{trv} zadany offset"
       },
       "writes": {
         "name": "Zapisy Zigbee"

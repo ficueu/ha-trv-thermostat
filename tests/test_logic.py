@@ -161,3 +161,11 @@ def test_outdoor_warm_beats_fallback_and_resets_hold():
     # user OFF and window still win over outdoor
     assert run(19.0, st, outdoor_warm=True, active=False).status == L.Status.OFF
     assert run(19.0, st, outdoor_warm=True, window_open=True).status == L.Status.WINDOW
+
+
+def test_boost_priority():
+    st = L.LoopState(level=1, level_since=10_000)
+    assert run(None, st, boost=True, active=False, outdoor_warm=True).status == L.Status.BOOST
+    assert st.level == 0 and st.level_since is None
+    assert run(25.0, st, boost=True).status == L.Status.BOOST  # even when warm
+    assert run(19.0, st, boost=True, window_open=True).status == L.Status.WINDOW

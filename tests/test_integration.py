@@ -69,6 +69,14 @@ def our_entity(hass: HomeAssistant, entry, domain: str, key: str) -> str:
     return eid
 
 
+def trv_key(hass: HomeAssistant, offset_entity: str) -> str:
+    return er.async_get(hass).async_get(offset_entity).id
+
+
+def trv_entity(hass: HomeAssistant, entry, domain: str, offset_entity: str, key: str) -> str:
+    return our_entity(hass, entry, domain, f"{trv_key(hass, offset_entity)}_{key}")
+
+
 async def test_full_day(hass: HomeAssistant, fake_devices, freezer) -> None:
     """Walk through a realistic sequence and count every Zigbee write."""
     trv1, trv2, off1, off2 = (fake_devices[k] for k in ("trv1", "trv2", "off1", "off2"))
@@ -223,7 +231,10 @@ async def test_settings_entities_and_off(hass: HomeAssistant, fake_devices, free
     await hass.services.async_call(
         "number",
         "set_value",
-        {"entity_id": our_entity(hass, entry, "number", "level1_offset"), "value": -3},
+        {
+            "entity_id": trv_entity(hass, entry, "number", "number.trv_1_calibration", "offset_l1"),
+            "value": -3,
+        },
         blocking=True,
     )
     await settle(hass)
@@ -289,7 +300,8 @@ async def test_settings_entities_and_off(hass: HomeAssistant, fake_devices, free
     await settle(hass)
     ctrl = entry.runtime_data
     assert ctrl.settings["day_temp"] == 22.0
-    assert ctrl.settings["level1_offset"] == -3.0
+    assert ctrl.offset_for("number.trv_1_calibration", 1) == -3.0
+    assert ctrl.offset_for("number.trv_2_calibration", 1) == -2.0
     assert ctrl.hvac_mode == HVACMode.OFF
     assert ctrl.preset == "comfort"
 
@@ -497,3 +509,167 @@ async def test_no_outdoor_sensor_no_cutoff_entity(hass: HomeAssistant, fake_devi
     reg = er.async_get(hass)
     assert reg.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_outdoor_cutoff") is None
     assert reg.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_away_temp")
+
+
+async def test_per_trv_offsets(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """Each TRV has its own offsets per level; range follows the TRV entity."""
+    off1, off2 = fake_devices["off1"], fake_devices["off2"]
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 20.5)
+    entry = await setup_room(hass)
+    assert off1.calls == [-2.0] and off2.calls == [-2.0]
+
+    l1_trv2 = trv_entity(hass, entry, "number", "number.trv_2_calibration", "offset_l1")
+    state = hass.states.get(l1_trv2)
+    assert state.attributes["min"] == -12.8 and state.attributes["max"] == 12.7
+    assert state.attributes["offset_entity"] == "number.trv_2_calibration"
+    assert "TRV 2 calibration" in state.attributes["friendly_name"]
+
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": l1_trv2, "value": -4.0}, blocking=True
+    )
+    await settle(hass)
+    assert off2.calls[-1] == -4.0
+    assert off1.calls == [-2.0]  # untouched
+    sens2 = trv_entity(hass, entry, "sensor", "number.trv_2_calibration", "offset")
+    assert float(hass.states.get(sens2).state) == -4.0
+    assert hass.states.get("climate.salon").attributes["offsets"] == {
+        "number.trv_1_calibration": -2.0,
+        "number.trv_2_calibration": -4.0,
+    }
+
+    # idle offsets per TRV too
+    idle1 = trv_entity(hass, entry, "number", "number.trv_1_calibration", "offset_l0")
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": idle1, "value": 5.0}, blocking=True
+    )
+    await set_temp(hass, 21.2)
+    await advance(hass, freezer, 300)
+    assert off1.native_value == 5.0 and off2.native_value == 3.0
+
+    # values survive a reload
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await settle(hass)
+    assert float(hass.states.get(l1_trv2).state) == -4.0
+    assert float(hass.states.get(idle1).state) == 5.0
+
+    # removing TRV 2 from the room removes its entities
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        {
+            "temperature_sensor": "sensor.salon_temp",
+            "trvs": ["climate.trv_1"],
+            "offset_entities": ["number.trv_1_calibration"],
+        },
+    )
+    await settle(hass)
+    assert hass.states.get(l1_trv2) is None
+    assert er.async_get(hass).async_get(l1_trv2) is None
+    assert er.async_get(hass).async_get(idle1) is not None
+
+
+async def test_migration_from_room_offsets(
+    hass: HomeAssistant, fake_devices, freezer, hass_storage
+) -> None:
+    """1.1 stored room-level offsets: they become every TRV's values, old entities go."""
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 20.5)
+    entry = MockConfigEntry(domain=DOMAIN, title="Salon", data=ENTRY_DATA, unique_id="salon")
+    entry.add_to_hass(hass)
+    hass_storage[f"{DOMAIN}.{entry.entry_id}"] = {
+        "version": 1,
+        "key": f"{DOMAIN}.{entry.entry_id}",
+        "data": {"settings": {"level1_offset": -3.5, "idle_offset": 4.0}},
+    }
+    reg = er.async_get(hass)
+    old = reg.async_get_or_create(
+        "number", DOMAIN, f"{entry.entry_id}_level1_offset", config_entry=entry
+    )
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await settle(hass)
+    assert fake_devices["off1"].calls == [-3.5] and fake_devices["off2"].calls == [-3.5]
+    assert reg.async_get(old.entity_id) is None
+    ctrl = entry.runtime_data
+    assert ctrl.offset_for("number.trv_2_calibration", 0) == 4.0
+    assert ctrl.offset_for("number.trv_2_calibration", 2) == -5.0
+
+
+async def test_boost(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """Boost = TRV max setpoint for N minutes, ignores off/away/target; window wins."""
+    trv1, trv2, off1 = fake_devices["trv1"], fake_devices["trv2"], fake_devices["off1"]
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 21.5)  # above target -> idle
+    entry = await setup_room(hass)
+    ctrl = entry.runtime_data
+    boost = our_entity(hass, entry, "button", "boost")
+    stop = our_entity(hass, entry, "button", "boost_stop")
+    duration = our_entity(hass, entry, "number", "boost_duration")
+    assert float(hass.states.get(duration).state) == 15.0
+    offsets_before = list(off1.calls)
+
+    # room switched off, still boosts
+    await hass.services.async_call(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "off"},
+        blocking=True,
+    )
+    await settle(hass)
+    assert trv1.hvac_mode == HVACMode.OFF
+    writes = ctrl.writes
+    await hass.services.async_call("button", "press", {"entity_id": boost}, blocking=True)
+    await settle(hass)
+    assert hass.states.get("sensor.salon_status").state == "boost"
+    assert hass.states.get("climate.salon").attributes["hvac_action"] == HVACAction.HEATING
+    assert trv1.hvac_mode == HVACMode.HEAT
+    assert trv1.target_temperature == 30 and trv2.target_temperature == 30  # max_temp
+    assert off1.calls == offsets_before  # offsets untouched
+    assert ctrl.writes == writes + 3  # trv1 mode + 2 setpoints
+
+    # still boosting after 14 min, over after 15
+    await advance(hass, freezer, 14 * 60, step=60)
+    assert hass.states.get("sensor.salon_status").state == "boost"
+    await advance(hass, freezer, 70, step=10)
+    assert hass.states.get("sensor.salon_status").state == "off"
+    assert trv1.hvac_mode == HVACMode.OFF
+    assert hass.states.get("climate.salon").attributes["boost_until"] is None
+
+    # back on, boost again; window opening wins over boost
+    await hass.services.async_call(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "heat"},
+        blocking=True,
+    )
+    await hass.services.async_call("button", "press", {"entity_id": boost}, blocking=True)
+    await settle(hass)
+    assert trv1.target_temperature == 30
+    hass.states.async_set("binary_sensor.salon_okno", "on")
+    await settle(hass)
+    await advance(hass, freezer, 90)
+    assert hass.states.get("sensor.salon_status").state == "window_open"
+    assert trv1.hvac_mode == HVACMode.OFF
+    hass.states.async_set("binary_sensor.salon_okno", "off")
+    await settle(hass)
+    await advance(hass, freezer, 150)
+    assert hass.states.get("sensor.salon_status").state == "boost"
+    assert trv1.target_temperature == 30
+
+    # survives a reload, stop button ends it, setpoint back to target
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await settle(hass)
+    assert hass.states.get("sensor.salon_status").state == "boost"
+    await hass.services.async_call("button", "press", {"entity_id": stop}, blocking=True)
+    await settle(hass)
+    assert hass.states.get("sensor.salon_status").state == "idle"
+    assert trv1.target_temperature == 21.0 and trv2.target_temperature == 21.0
+
+    # custom duration
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": duration, "value": 5}, blocking=True
+    )
+    await hass.services.async_call("button", "press", {"entity_id": boost}, blocking=True)
+    await settle(hass)
+    await advance(hass, freezer, 5 * 60 + 30, step=30)
+    assert hass.states.get("sensor.salon_status").state == "idle"

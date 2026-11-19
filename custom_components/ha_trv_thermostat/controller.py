@@ -58,9 +58,11 @@ from homeassistant.core import (
     State,
     callback,
 )
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.event import (
     async_call_later,
+    async_track_point_in_utc_time,
     async_track_state_change_event,
     async_track_time_interval,
 )
@@ -93,6 +95,7 @@ from .const import (
     MAX_ATTEMPTS,
     PRESET_SCHEDULE,
     S_AWAY_TEMP,
+    S_BOOST_DURATION,
     S_DAY_START,
     S_DAY_TEMP,
     S_HYST_OFF,
@@ -142,6 +145,7 @@ KIND_MODE = "mode"
 KIND_SETPOINT = "setpoint"
 KIND_OFFSET = "offset"
 SETPOINT_MIN = "min"  # sentinel: emulate "off" with the TRV's min_temp
+SETPOINT_MAX = "max"  # sentinel: boost -> TRV's max_temp, valve fully open
 TEMP_MIN = 5.0
 TEMP_MAX = 30.0
 
@@ -212,16 +216,24 @@ class RoomController:
         self.target_source: str | None = None
         self.room_temp: float | None = None
         self.slope: float | None = None
-        self.commanded_offset: float | None = None
+        self.commanded_offsets: dict[str, float | None] = {}
         self.last_level_change: datetime | None = None
         self.writes = 0
         self.away = False
+        self.boost_until: datetime | None = None
+        self._boost_timer: CALLBACK_TYPE | None = None
         self.outdoor_temp: float | None = None
         self.outdoor_warm = False
 
         self._modes = {e: Actuator(e, KIND_MODE) for e in self.trvs}
         self._setpoints = {e: Actuator(e, KIND_SETPOINT) for e in self.trvs}
         self._offsets = {e: Actuator(e, KIND_OFFSET) for e in self.offset_entities}
+        # Per-TRV offsets: keyed by the offset entity's registry id (survives
+        # entity_id renames), values per level 0..3.
+        self.trv_keys: dict[str, str] = {}
+        self.trv_names: dict[str, str] = {}
+        self._identify_trvs()
+        self.trv_offsets: dict[str, dict[str, float]] = {}
 
         self._started = False
         self._started_at = 0.0
@@ -263,7 +275,14 @@ class RoomController:
         self.override_temp = _float(data.get("override_temp"))
         until = data.get("override_until")
         self.override_until = dt_util.parse_datetime(until) if until else None
+        stored = data.get("trv_offsets", {})
+        for key in self.trv_keys.values():
+            values = dict(self._template_offsets())
+            values.update({k: float(v) for k, v in stored.get(key, {}).items()})
+            self.trv_offsets[key] = values
         self.away = bool(data.get("away", False))
+        boost = data.get("boost_until")
+        self.boost_until = dt_util.parse_datetime(boost) if boost else None
         self.outdoor_warm = bool(data.get("outdoor_warm", False)) and bool(self.outdoor_sensor)
         self._loop.level = int(data.get("level", 0) or 0)
         self._loop.level_since = _float(data.get("level_since"))
@@ -275,7 +294,9 @@ class RoomController:
             "preset": self.preset,
             "override_temp": self.override_temp,
             "override_until": self.override_until.isoformat() if self.override_until else None,
+            "trv_offsets": self.trv_offsets,
             "away": self.away,
+            "boost_until": self.boost_until.isoformat() if self.boost_until else None,
             "outdoor_warm": self.outdoor_warm,
             "level": self._loop.level,
             "level_since": self._loop.level_since,
@@ -315,6 +336,9 @@ class RoomController:
         if self._window_timer:
             self._window_timer()
             self._window_timer = None
+        if self._boost_timer:
+            self._boost_timer()
+            self._boost_timer = None
         if self._apply_task and not self._apply_task.done():
             self._apply_task.cancel()
         await self._store.async_save(self._data_to_save())
@@ -349,8 +373,9 @@ class RoomController:
             self.override_temp,
             self.override_until,
             self.window_open,
-            self.commanded_offset,
+            tuple(sorted(self.commanded_offsets.items())),
             self.away,
+            self.boost_until,
             self.outdoor_temp,
             self.outdoor_warm,
         )
@@ -374,6 +399,7 @@ class RoomController:
         self._window_raw = self._window_any_open()
         self._window_raw_since = now - 86400  # already settled
         self.window_open = self._window_raw
+        self._schedule_boost_end()
         self.async_evaluate("startup")
 
     @callback
@@ -488,6 +514,42 @@ class RoomController:
         self.override_temp = self.override_until = None
         self._save()
         self.async_evaluate("away on" if away else "away off")
+
+    @callback
+    def async_start_boost(self) -> None:
+        """Full heat for boost_duration minutes (pressing again restarts it)."""
+        minutes = float(self.settings[S_BOOST_DURATION])
+        self.boost_until = dt_util.utcnow() + timedelta(minutes=minutes)
+        self._save()
+        self._schedule_boost_end()
+        self.async_evaluate("boost start")
+
+    @callback
+    def async_stop_boost(self) -> None:
+        """End boost now."""
+        if self.boost_until is None:
+            return
+        self.boost_until = None
+        self._save()
+        self._schedule_boost_end()
+        self.async_evaluate("boost stop")
+
+    @callback
+    def _schedule_boost_end(self) -> None:
+        if self._boost_timer:
+            self._boost_timer()
+            self._boost_timer = None
+        if self.boost_until is None:
+            return
+
+        @callback
+        def _end(_now: datetime) -> None:
+            self._boost_timer = None
+            self.async_evaluate("boost end")
+
+        self._boost_timer = async_track_point_in_utc_time(
+            self.hass, _end, self.boost_until + timedelta(seconds=1)
+        )
 
     @callback
     def async_set_preset(self, preset: str) -> None:
@@ -636,10 +698,44 @@ class RoomController:
             lookahead_min=float(s[S_LOOKAHEAD]),
         )
 
-    def offset_for_level(self, level: int) -> float:
-        """Map a heating level to a calibration offset."""
-        key = {0: S_IDLE_OFFSET, 1: S_L1_OFFSET, 2: S_L2_OFFSET, 3: S_L3_OFFSET}[level]
-        return float(self.settings[key])
+    def _template_offsets(self) -> dict[str, float]:
+        """Room-level offsets: defaults for TRVs that have no own values yet."""
+        return {
+            str(level): float(self.settings[key])
+            for level, key in (
+                (0, S_IDLE_OFFSET),
+                (1, S_L1_OFFSET),
+                (2, S_L2_OFFSET),
+                (3, S_L3_OFFSET),
+            )
+        }
+
+    def _identify_trvs(self) -> None:
+        """Stable key and a readable name for every offset entity."""
+        ent_reg = er.async_get(self.hass)
+        dev_reg = dr.async_get(self.hass)
+        for eid in self.offset_entities:
+            entry = ent_reg.async_get(eid)
+            self.trv_keys[eid] = entry.id if entry else eid
+            name = None
+            if entry and entry.device_id and (dev := dev_reg.async_get(entry.device_id)):
+                name = dev.name_by_user or dev.name
+            if not name and entry:
+                name = entry.name or entry.original_name
+            if not name and (state := self.hass.states.get(eid)):
+                name = state.name
+            self.trv_names[eid] = name or eid
+
+    def offset_for(self, entity_id: str, level: int) -> float:
+        """Calibration offset of one TRV for a heating level."""
+        return float(self.trv_offsets[self.trv_keys[entity_id]][str(level)])
+
+    @callback
+    def async_set_trv_offset(self, entity_id: str, level: int, value: float) -> None:
+        """Change one TRV's offset for one level."""
+        self.trv_offsets[self.trv_keys[entity_id]][str(level)] = float(value)
+        self._save()
+        self.async_evaluate(f"offset {entity_id} L{level}")
 
     @callback
     def async_evaluate(self, reason: str = "") -> None:
@@ -648,6 +744,11 @@ class RoomController:
             return
         now_dt = dt_util.now()
         now = now_dt.timestamp()
+
+        if self.boost_until is not None and now_dt >= self.boost_until:
+            _LOGGER.debug("%s: boost finished", self.entry.title)
+            self.boost_until = None
+            self._save()
 
         if self.override_until is not None and now_dt >= self.override_until:
             _LOGGER.debug("%s: override expired", self.entry.title)
@@ -671,6 +772,7 @@ class RoomController:
             active=self.hvac_mode != HVACMode.OFF,
             window_open=self.window_open,
             outdoor_warm=self.outdoor_warm,
+            boost=self.boost_until is not None,
             slope_per_h=slope,
         )
         prev = self.decision
@@ -703,7 +805,18 @@ class RoomController:
             # yet - leave the TRVs exactly as they are instead of writing twice.
             for act in (*self._modes.values(), *self._setpoints.values(), *self._offsets.values()):
                 act.desired = None
-            self.commanded_offset = None
+            self.commanded_offsets = {}
+            return
+        if decision.status == Status.BOOST:
+            # Max setpoint opens the valve fully whatever the offset is, so the
+            # offsets are left alone: 2 writes per TRV for the whole boost.
+            for act in self._modes.values():
+                act.desired = HVACMode.HEAT
+            for act in self._setpoints.values():
+                act.desired = SETPOINT_MAX
+            for act in self._offsets.values():
+                act.desired = None
+            self.commanded_offsets = {}
             return
         if decision.status in (Status.OFF, Status.WINDOW, Status.OUTDOOR):
             for act in self._modes.values():
@@ -712,20 +825,21 @@ class RoomController:
                 act.desired = SETPOINT_MIN  # only used if the TRV has no "off"
             for act in self._offsets.values():
                 act.desired = None  # leave untouched, saves traffic
-            self.commanded_offset = None
+            self.commanded_offsets = {}
             return
-        offset = (
-            self.fallback_offset
-            if decision.status == Status.FALLBACK
-            else self.offset_for_level(decision.level)
-        )
         for act in self._modes.values():
             act.desired = HVACMode.HEAT
         for act in self._setpoints.values():
             act.desired = target
-        for act in self._offsets.values():
-            act.desired = offset
-        self.commanded_offset = offset
+        offsets: dict[str, float | None] = {}
+        for eid, act in self._offsets.items():
+            act.desired = (
+                self.fallback_offset
+                if decision.status == Status.FALLBACK
+                else self.offset_for(eid, decision.level)
+            )
+            offsets[eid] = act.desired
+        self.commanded_offsets = offsets
 
     # ------------------------------------------------------------------ #
     # Actuation
@@ -763,6 +877,8 @@ class RoomController:
                 if HVACMode.OFF in modes:
                     return None
                 return _float(attrs.get(ATTR_MIN_TEMP)) or TEMP_MIN
+            if act.desired == SETPOINT_MAX:
+                return _float(attrs.get(ATTR_MAX_TEMP)) or TEMP_MAX
             return quantize(
                 float(act.desired),
                 _float(attrs.get(ATTR_TARGET_TEMP_STEP)) or 0.5,

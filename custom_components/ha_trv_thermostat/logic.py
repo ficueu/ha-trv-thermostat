@@ -34,11 +34,12 @@ class Status(StrEnum):
     IDLE = "idle"
     HEATING = "heating"
     WINDOW = "window_open"
+    BOOST = "boost"
     OUTDOOR = "outdoor_warm"
     FALLBACK = "sensor_lost"
 
 
-SPECIAL_STATUSES = (Status.OFF, Status.WINDOW, Status.OUTDOOR, Status.FALLBACK)
+SPECIAL_STATUSES = (Status.OFF, Status.WINDOW, Status.BOOST, Status.OUTDOOR, Status.FALLBACK)
 
 
 @dataclass(frozen=True)
@@ -121,9 +122,14 @@ def decide(
     active: bool = True,
     window_open: bool = False,
     outdoor_warm: bool = False,
+    boost: bool = False,
     slope_per_h: float | None = None,
 ) -> Decision:
     """Decide the heating level. Pure function."""
+    # Boost ignores every setting (off, away, outdoor, schedule) - only an
+    # open window is stronger.
+    if boost and not window_open:
+        return Decision(0, Status.BOOST, None, None, False, "boost")
     if not active:
         return Decision(0, Status.OFF, None, None, False, "off")
     if window_open:

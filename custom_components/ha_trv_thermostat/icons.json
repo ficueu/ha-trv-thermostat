@@ -1,5 +1,32 @@
 {
   "entity": {
+    "button": {
+      "boost": {
+        "default": "mdi:fire"
+      },
+      "boost_stop": {
+        "default": "mdi:fire-off"
+      }
+    },
+    "number": {
+      "away_temp": {
+        "default": "mdi:home-thermometer-outline"
+      },
+      "outdoor_cutoff": {
+        "default": "mdi:sun-thermometer-outline"
+      },
+      "boost_duration": {
+        "default": "mdi:timer-outline"
+      }
+    },
+    "sensor": {
+      "level": {
+        "default": "mdi:radiator"
+      },
+      "writes": {
+        "default": "mdi:zigbee"
+      }
+    },
     "switch": {
       "away": {
         "default": "mdi:home-export-outline",
@@ -7,14 +34,6 @@
           "off": "mdi:home-account"
         }
       }
-    },
-    "number": {
-      "away_temp": { "default": "mdi:home-thermometer-outline" },
-      "outdoor_cutoff": { "default": "mdi:sun-thermometer-outline" }
-    },
-    "sensor": {
-      "level": { "default": "mdi:radiator" },
-      "writes": { "default": "mdi:zigbee" }
     }
   }
 }

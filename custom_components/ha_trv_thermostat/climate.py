@@ -73,6 +73,8 @@ class TrvThermostatClimate(TrvThermostatEntity, ClimateEntity):
     def hvac_action(self) -> HVACAction | None:
         """Heating when level > 0."""
         d = self._ctrl.decision
+        if d is not None and d.status == Status.BOOST:
+            return HVACAction.HEATING
         if self._ctrl.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
         if d is None:
@@ -94,11 +96,12 @@ class TrvThermostatClimate(TrvThermostatEntity, ClimateEntity):
         return {
             "status": d.status.value if d else None,
             "level": d.level if d else None,
-            "offset": c.commanded_offset,
+            "offsets": c.commanded_offsets,
             "target_source": c.target_source,
             "override_until": c.override_until.isoformat() if c.override_until else None,
             "window_open": c.window_open,
             "away": c.away,
+            "boost_until": c.boost_until.isoformat() if c.boost_until else None,
             "outdoor_temperature": c.outdoor_temp,
             "outdoor_warm": c.outdoor_warm,
             "last_level_change": c.last_level_change.isoformat() if c.last_level_change else None,

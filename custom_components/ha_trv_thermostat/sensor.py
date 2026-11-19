@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .controller import RoomController
-from .entity import TrvThermostatEntity
+from .entity import TrvThermostatEntity, async_remove_orphans
 from .logic import Status
 
 
@@ -22,9 +22,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up sensors."""
     ctrl: RoomController = entry.runtime_data
-    async_add_entities(
-        [LevelSensor(ctrl), StatusSensor(ctrl), OffsetSensor(ctrl), WritesSensor(ctrl)]
-    )
+    entities: list[SensorEntity] = [LevelSensor(ctrl), StatusSensor(ctrl), WritesSensor(ctrl)]
+    entities.extend(TrvOffsetSensor(ctrl, eid) for eid in ctrl.offset_entities)
+    async_remove_orphans(hass, entry, "sensor", entities)
+    async_add_entities(entities)
 
 
 class LevelSensor(TrvThermostatEntity, SensorEntity):
@@ -60,22 +61,24 @@ class StatusSensor(TrvThermostatEntity, SensorEntity):
         return self._ctrl.decision.status.value if self._ctrl.decision else None
 
 
-class OffsetSensor(TrvThermostatEntity, SensorEntity):
-    """Offset currently commanded to the TRVs."""
+class TrvOffsetSensor(TrvThermostatEntity, SensorEntity):
+    """Offset currently commanded to one TRV."""
 
-    _attr_translation_key = "offset"
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "trv_offset"
 
-    def __init__(self, ctrl: RoomController) -> None:
+    def __init__(self, ctrl: RoomController, offset_entity: str) -> None:
         """Init."""
-        super().__init__(ctrl, "offset")
+        super().__init__(ctrl, f"{ctrl.trv_keys[offset_entity]}_offset")
+        self._offset_entity = offset_entity
+        self._attr_translation_placeholders = {"trv": ctrl.trv_names[offset_entity]}
 
     @property
     def native_value(self) -> float | None:
-        """Offset."""
-        return self._ctrl.commanded_offset
+        """Offset (None while the TRV is off / not driven)."""
+        return self._ctrl.commanded_offsets.get(self._offset_entity)
 
 
 class WritesSensor(TrvThermostatEntity, SensorEntity):

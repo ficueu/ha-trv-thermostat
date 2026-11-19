@@ -9,7 +9,7 @@ Integracja Home Assistant do sterowania głowicami Zigbee (TRV) na podstawie **z
 
 ## Zasada działania
 
-Głowica zawsze dostaje jako setpoint **prawdziwą** temperaturę docelową. O tym, czy grzeje, decyduje offset (kalibracja temperatury lokalnej):
+Głowica zawsze dostaje jako setpoint **prawdziwą** temperaturę docelową. O tym, czy grzeje, decyduje offset (kalibracja temperatury lokalnej). Poziom grzania jest wspólny dla pokoju, ale **offset dla każdego poziomu ustawiasz osobno dla każdej głowicy**, np. mocniej dla głowicy przy dużym grzejniku pod oknem. Domyślne wartości:
 
 | Poziom | Kiedy | Offset (domyślnie) |
 |---|---|---|
@@ -33,6 +33,7 @@ Sytuacje szczególne:
 | Okno otwarte (po opóźnieniu, domyślnie 60 s) | głowica → `off`; jeśli nie ma trybu off → setpoint = `min_temp` |
 | Termostat pokoju `off` | jak wyżej, offset bez zmian |
 | Temperatura zewnętrzna ≥ próg (domyślnie 15 °C) | jak wyżej (status „ciepło na zewnątrz”); grzanie wraca dopiero przy próg − histereza (domyślnie 1 °C, czyli 14 °C) |
+| **Boost** | głowice dostają swój maksymalny setpoint (`max_temp`), więc zawór otwiera się na pełno na „Czas boostu” (domyślnie 15 min). Boost pomija harmonogram, histerezę, poza domem, próg zewnętrzny i wyłączony termostat; wygrywa z nim tylko otwarte okno. Offsetów nie zmienia, więc to 2 zapisy na głowicę |
 | **Poza domem** włączone | zadana = temperatura poza domem (domyślnie 20 °C), niezależnie od harmonogramu, presetu i nadpisań; pokrętło głowicy jest cofane |
 | Czujnik `unavailable` < 10 min | ignorowane, zostaje ostatnia wartość |
 | Czujnik zgubiony (unavailable ≥ 10 min albo brak raportu przez `sensor_timeout`, domyślnie 120 min) | offset awaryjny (0) → głowica reguluje sama |
@@ -81,17 +82,24 @@ Wymagany HA ≥ 2024.11 (testowane na 2026.2).
 | `switch.<pokój>_poza_domem` | tryb poza domem |
 | `number.<pokój>_temperatura_poza_domem` | zadana w trybie poza domem (domyślnie 20 °C) |
 | `number.<pokój>_wylacz_grzanie_przy_temperaturze_zewnetrznej` | próg wyłączenia grzania (domyślnie 15 °C); tylko gdy wybrano czujnik zewnętrzny |
-| `number.*` (kategoria konfiguracja) | histerezy, offsety poziomów, progi, min_hold, wyprzedzenie |
+| `button.<pokój>_boost` / `_zakoncz_boost` | start (ponowne naciśnięcie liczy czas od nowa) / przerwanie boostu |
+| `number.<pokój>_czas_boostu` | czas boostu (domyślnie 15 min) |
+| `number.<pokój>_<głowica>_offset_spoczynek_poziom_0` … `_offset_poziom_3` | offsety tej głowicy dla poziomów 0–3 (kategoria konfiguracja); zakres i krok jak w encji kalibracji głowicy |
+| `number.*` (kategoria konfiguracja) | histerezy, progi poziomów, min_hold, wyprzedzenie |
 | `sensor.<pokój>_poziom_grzania` | 0–3 |
-| `sensor.<pokój>_status` | wyłączone / bezczynny / grzanie / okno otwarte / ciepło na zewnątrz / brak czujnika |
-| `sensor.<pokój>_zadany_offset`, `sensor.<pokój>_zapisy_zigbee` | diagnostyka |
+| `sensor.<pokój>_status` | wyłączone / bezczynny / grzanie / okno otwarte / boost / ciepło na zewnątrz / brak czujnika |
+| `sensor.<pokój>_<głowica>_zadany_offset`, `sensor.<pokój>_zapisy_zigbee` | diagnostyka |
 
 Zmiana temperatury na karcie termostatu:
 - w presecie **Harmonogram** ustawia nadpisanie do najbliższej zmiany dzień/noc (atrybut `override_until`); ustawienie z powrotem wartości z harmonogramu kasuje nadpisanie,
 - w presecie **Dzień** / **Noc** zmienia na stałe temperaturę dzienną / nocną,
 - przy włączonym **Poza domem** zmienia temperaturę poza domem.
 
-Atrybuty `climate` do debugowania: `status`, `level`, `offset`, `deficit`, `trend` (°C/h), `reason`, `target_source` (`day`/`night`/`comfort`/`eco`/`override`/`away`), `override_until`, `last_level_change`, `away`, `outdoor_temperature`, `outdoor_warm`. Atrybuty `deficit`, `trend` i `reason` nie trafiają do recordera.
+Atrybuty `climate` do debugowania: `status`, `level`, `deficit`, `trend` (°C/h), `reason`, `target_source` (`day`/`night`/`comfort`/`eco`/`override`/`away`), `override_until`, `last_level_change`, `away`, `boost_until`, `outdoor_temperature`, `outdoor_warm`, `offsets` (zadany offset każdej głowicy). Atrybuty `deficit`, `trend` i `reason` nie trafiają do recordera.
+
+### Aktualizacja z wcześniejszych wersji
+
+Wspólne offsety pokoju z wersji 1.0–1.1 zostają skopiowane do każdej głowicy, a stare encje offsetów pokoju znikają same. Encje głowic usuniętych z pokoju w **Konfiguruj** też są sprzątane automatycznie.
 
 ### Poza domem dla całego mieszkania
 

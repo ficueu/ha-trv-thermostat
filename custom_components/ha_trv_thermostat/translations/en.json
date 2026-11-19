@@ -63,6 +63,14 @@
     }
   },
   "entity": {
+    "button": {
+      "boost": {
+        "name": "Boost"
+      },
+      "boost_stop": {
+        "name": "Stop boost"
+      }
+    },
     "climate": {
       "room": {
         "state_attributes": {
@@ -86,6 +94,9 @@
       "away_temp": {
         "name": "Away temperature"
       },
+      "boost_duration": {
+        "name": "Boost duration"
+      },
       "outdoor_cutoff": {
         "name": "Heating off at outdoor temperature"
       },
@@ -98,20 +109,8 @@
       "level_hyst": {
         "name": "Level hysteresis"
       },
-      "idle_offset": {
-        "name": "Offset - idle (level 0)"
-      },
-      "level1_offset": {
-        "name": "Offset - level 1"
-      },
-      "level2_offset": {
-        "name": "Offset - level 2"
-      },
       "level2_threshold": {
         "name": "Level 2 above deficit"
-      },
-      "level3_offset": {
-        "name": "Offset - level 3"
       },
       "level3_threshold": {
         "name": "Level 3 above deficit (0 = off)"
@@ -121,6 +120,18 @@
       },
       "lookahead": {
         "name": "Trend lookahead (0 = off)"
+      },
+      "trv_offset_l0": {
+        "name": "{trv} offset - idle (level 0)"
+      },
+      "trv_offset_l1": {
+        "name": "{trv} offset - level 1"
+      },
+      "trv_offset_l2": {
+        "name": "{trv} offset - level 2"
+      },
+      "trv_offset_l3": {
+        "name": "{trv} offset - level 3"
       }
     },
     "switch": {
@@ -147,12 +158,13 @@
           "idle": "Idle",
           "heating": "Heating",
           "window_open": "Window open",
+          "boost": "Boost",
           "outdoor_warm": "Warm outside",
           "sensor_lost": "Sensor lost"
         }
       },
-      "offset": {
-        "name": "Commanded offset"
+      "trv_offset": {
+        "name": "{trv} commanded offset"
       },
       "writes": {
         "name": "Zigbee writes"
