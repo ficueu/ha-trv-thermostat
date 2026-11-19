@@ -34,10 +34,11 @@ class Status(StrEnum):
     IDLE = "idle"
     HEATING = "heating"
     WINDOW = "window_open"
+    OUTDOOR = "outdoor_warm"
     FALLBACK = "sensor_lost"
 
 
-SPECIAL_STATUSES = (Status.OFF, Status.WINDOW, Status.FALLBACK)
+SPECIAL_STATUSES = (Status.OFF, Status.WINDOW, Status.OUTDOOR, Status.FALLBACK)
 
 
 @dataclass(frozen=True)
@@ -119,6 +120,7 @@ def decide(
     now: float,
     active: bool = True,
     window_open: bool = False,
+    outdoor_warm: bool = False,
     slope_per_h: float | None = None,
 ) -> Decision:
     """Decide the heating level. Pure function."""
@@ -126,6 +128,8 @@ def decide(
         return Decision(0, Status.OFF, None, None, False, "off")
     if window_open:
         return Decision(0, Status.WINDOW, None, None, False, "window open")
+    if outdoor_warm:
+        return Decision(0, Status.OUTDOOR, None, None, False, "warm outside")
     if temp is None:
         return Decision(0, Status.FALLBACK, None, None, False, "no room temperature")
 
@@ -183,6 +187,20 @@ def apply_decision(state: LoopState, decision: Decision, now: float) -> bool:
         state.level_since = now
         return True
     return False
+
+
+def outdoor_cutoff(outdoor: float | None, threshold: float, hyst: float, active: bool) -> bool:
+    """Heating season switch with hysteresis.
+
+    Becomes active (no heating) at ``outdoor >= threshold`` and releases only at
+    ``outdoor <= threshold - hyst``. Unknown outdoor temperature keeps the
+    current state, so sensor blips never toggle the TRVs.
+    """
+    if outdoor is None:
+        return active
+    if active:
+        return outdoor > threshold - hyst + EPS
+    return outdoor >= threshold - EPS
 
 
 # --------------------------------------------------------------------------- #

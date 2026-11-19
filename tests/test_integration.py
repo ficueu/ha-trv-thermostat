@@ -368,6 +368,8 @@ async def test_config_flow_autodetect(hass: HomeAssistant) -> None:
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await settle(hass)
     assert entry.runtime_data.adopt_trv_setpoint is False
+    assert entry.options["outdoor_sensor"] is None
+    assert entry.runtime_data.outdoor_sensor is None
     assert entry.runtime_data.sensor_timeout_s == 3600
 
 
@@ -386,3 +388,112 @@ async def test_startup_without_sensor_touches_nothing(
     hass.states.async_set("sensor.salon_temp", "unknown")
     await advance(hass, freezer, 900, heartbeat=False)
     assert fake_devices["off1"].native_value == 0.0
+
+
+async def test_away_mode(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """Away switch: target = away temp (default 20), knob is reverted, off -> schedule."""
+    trv1, trv2, off1 = fake_devices["trv1"], fake_devices["trv2"], fake_devices["off1"]
+    freezer.move_to("2026-11-09 11:00:00+00:00")  # day, target 21
+    await set_temp(hass, 20.5)
+    entry = await setup_room(hass)
+    away = our_entity(hass, entry, "switch", "away")
+    assert hass.states.get(away).state == "off"
+    assert off1.calls == [-2.0]
+
+    await hass.services.async_call("switch", "turn_on", {"entity_id": away}, blocking=True)
+    await settle(hass)
+    state = hass.states.get("climate.salon")
+    assert state.attributes["temperature"] == 20.0
+    assert state.attributes["target_source"] == "away"
+    assert trv1.target_temperature == 20.0 and trv2.target_temperature == 20.0
+    # 20.5 vs 20 -> no heating; level change waits for the 5 min hold
+    await advance(hass, freezer, 300)
+    assert off1.calls[-1] == 3.0
+
+    # knob while away -> reverted, target stays 20
+    await advance(hass, freezer, 300)
+    trv1.knob(23.0)
+    await settle(hass)
+    assert hass.states.get("climate.salon").attributes["temperature"] == 20.0
+    await advance(hass, freezer, 120)
+    assert trv1.target_temperature == 20.0
+
+    # card +/- while away edits the away temperature
+    await hass.services.async_call(
+        "climate",
+        "set_temperature",
+        {"entity_id": "climate.salon", "temperature": 18.0},
+        blocking=True,
+    )
+    await settle(hass)
+    assert entry.runtime_data.settings["away_temp"] == 18.0
+    away_temp = our_entity(hass, entry, "number", "away_temp")
+    assert float(hass.states.get(away_temp).state) == 18.0
+
+    # off -> back to schedule (21), survives reload
+    await hass.services.async_call("switch", "turn_off", {"entity_id": away}, blocking=True)
+    await settle(hass)
+    assert trv1.target_temperature == 21.0
+    await hass.services.async_call("switch", "turn_on", {"entity_id": away}, blocking=True)
+    await settle(hass)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await settle(hass)
+    assert hass.states.get(away).state == "on"
+    assert hass.states.get("climate.salon").attributes["temperature"] == 18.0
+
+
+async def test_outdoor_cutoff(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """Outdoor >= 15 -> TRVs off; back only at <= 14 (hysteresis 1)."""
+    trv1, trv2, off1 = fake_devices["trv1"], fake_devices["trv2"], fake_devices["off1"]
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 20.5)
+    hass.states.async_set("sensor.outside", "10.0", {"device_class": "temperature"})
+    entry = await setup_room(hass, outdoor_sensor="sensor.outside")
+    cutoff = our_entity(hass, entry, "number", "outdoor_cutoff")
+    assert float(hass.states.get(cutoff).state) == 15.0
+    assert hass.states.get("sensor.salon_status").state == "heating"
+
+    hass.states.async_set("sensor.outside", "15.2", {"device_class": "temperature"})
+    await settle(hass)
+    assert hass.states.get("sensor.salon_status").state == "outdoor_warm"
+    assert trv1.hvac_mode == HVACMode.OFF
+    assert trv2.target_temperature == 5  # no OFF mode -> min_temp
+    assert hass.states.get("climate.salon").attributes["outdoor_warm"] is True
+
+    writes = entry.runtime_data.writes
+    for t in ("14.6", "unavailable", "14.3", "15.5", "14.1"):
+        hass.states.async_set("sensor.outside", t, {"device_class": "temperature"})
+        await settle(hass)
+        await advance(hass, freezer, 60)
+    assert hass.states.get("sensor.salon_status").state == "outdoor_warm"
+    assert entry.runtime_data.writes == writes  # nothing sent while it flaps
+
+    hass.states.async_set("sensor.outside", "14.0", {"device_class": "temperature"})
+    await settle(hass)
+    assert hass.states.get("sensor.salon_status").state == "heating"
+    assert trv1.hvac_mode == HVACMode.HEAT and trv2.target_temperature == 21.0
+    assert off1.native_value == -2.0
+
+    # threshold is a live setting
+    await hass.services.async_call(
+        "number", "set_value", {"entity_id": cutoff, "value": 12.0}, blocking=True
+    )
+    await settle(hass)
+    assert hass.states.get("sensor.salon_status").state == "outdoor_warm"
+
+
+async def test_outdoor_from_weather_entity(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """A weather entity works as outdoor source (temperature attribute)."""
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 20.5)
+    hass.states.async_set("weather.home", "sunny", {"temperature": 17.0})
+    await setup_room(hass, outdoor_sensor="weather.home")
+    assert hass.states.get("sensor.salon_status").state == "outdoor_warm"
+
+
+async def test_no_outdoor_sensor_no_cutoff_entity(hass: HomeAssistant, fake_devices) -> None:
+    """Without an outdoor sensor the cutoff number is not created."""
+    entry = await setup_room(hass)
+    reg = er.async_get(hass)
+    assert reg.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_outdoor_cutoff") is None
+    assert reg.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_away_temp")

@@ -14,6 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import (
+    S_AWAY_TEMP,
     S_DAY_TEMP,
     S_HYST_OFF,
     S_HYST_ON,
@@ -27,6 +28,7 @@ from .const import (
     S_LOOKAHEAD,
     S_MIN_HOLD,
     S_NIGHT_TEMP,
+    S_OUTDOOR_CUTOFF,
 )
 from .controller import RoomController
 from .entity import TrvThermostatEntity
@@ -34,13 +36,15 @@ from .entity import TrvThermostatEntity
 C = UnitOfTemperature.CELSIUS
 
 
-def _temp(key: str) -> NumberEntityDescription:
+def _temp(
+    key: str, vmin: float = 5, vmax: float = 30, step: float = 0.1
+) -> NumberEntityDescription:
     return NumberEntityDescription(
         key=key,
         translation_key=key,
-        native_min_value=5,
-        native_max_value=30,
-        native_step=0.1,
+        native_min_value=vmin,
+        native_max_value=vmax,
+        native_step=step,
         native_unit_of_measurement=C,
         device_class=NumberDeviceClass.TEMPERATURE,
         mode=NumberMode.BOX,
@@ -78,6 +82,7 @@ def _minutes(key: str, vmax: float) -> NumberEntityDescription:
 NUMBERS: tuple[NumberEntityDescription, ...] = (
     _temp(S_DAY_TEMP),
     _temp(S_NIGHT_TEMP),
+    _temp(S_AWAY_TEMP),
     _delta(S_HYST_ON, 0, 3),
     _delta(S_HYST_OFF, -1, 3),
     _delta(S_LEVEL_HYST, 0, 2),
@@ -91,13 +96,19 @@ NUMBERS: tuple[NumberEntityDescription, ...] = (
     _minutes(S_LOOKAHEAD, 60),
 )
 
+# Only created when an outdoor sensor is configured.
+OUTDOOR_CUTOFF = _temp(S_OUTDOOR_CUTOFF, -10, 30, 0.5)
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up number entities."""
     ctrl: RoomController = entry.runtime_data
-    async_add_entities(TrvThermostatNumber(ctrl, desc) for desc in NUMBERS)
+    descriptions = list(NUMBERS)
+    if ctrl.outdoor_sensor:
+        descriptions.append(OUTDOOR_CUTOFF)
+    async_add_entities(TrvThermostatNumber(ctrl, desc) for desc in descriptions)
 
 
 class TrvThermostatNumber(TrvThermostatEntity, NumberEntity):

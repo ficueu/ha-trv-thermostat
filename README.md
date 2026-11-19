@@ -32,6 +32,8 @@ Sytuacje szczególne:
 |---|---|
 | Okno otwarte (po opóźnieniu, domyślnie 60 s) | głowica → `off`; jeśli nie ma trybu off → setpoint = `min_temp` |
 | Termostat pokoju `off` | jak wyżej, offset bez zmian |
+| Temperatura zewnętrzna ≥ próg (domyślnie 15 °C) | jak wyżej (status „ciepło na zewnątrz”); grzanie wraca dopiero przy próg − histereza (domyślnie 1 °C, czyli 14 °C) |
+| **Poza domem** włączone | zadana = temperatura poza domem (domyślnie 20 °C), niezależnie od harmonogramu, presetu i nadpisań; pokrętło głowicy jest cofane |
 | Czujnik `unavailable` < 10 min | ignorowane, zostaje ostatnia wartość |
 | Czujnik zgubiony (unavailable ≥ 10 min albo brak raportu przez `sensor_timeout`, domyślnie 120 min) | offset awaryjny (0) → głowica reguluje sama |
 | Restart HA, czujnik jeszcze nie zaraportował | przez 10 min nic nie jest zapisywane |
@@ -65,7 +67,7 @@ Skopiuj katalog `custom_components/ha_trv_thermostat` do `/config/custom_compone
    - nazwa, czujnik temperatury, głowice (może być kilka),
    - encje offsetu: wykrywane automatycznie na urządzeniu głowicy (`local_temperature_calibration` w Z2M, `local_temperature_offset` w ZHA); sprawdź, czy wybrały się właściwe,
    - opcjonalnie czujniki okna.
-2. Opcje zaawansowane (opóźnienia okna, timeout czujnika, offset awaryjny, przejmowanie zmian z głowicy): **Konfiguruj** przy wpisie.
+2. Opcje zaawansowane (czujnik zewnętrzny i jego histereza, opóźnienia okna, timeout czujnika, offset awaryjny, przejmowanie zmian z głowicy): **Konfiguruj** przy wpisie.
 
 Wymagany HA ≥ 2024.11 (testowane na 2026.2).
 
@@ -76,16 +78,28 @@ Wymagany HA ≥ 2024.11 (testowane na 2026.2).
 | `climate.<pokój>` | termostat; presety: **Harmonogram** (dzień/noc wg godzin), **Dzień**, **Noc** |
 | `number.<pokój>_temperatura_dzien` / `_noc` | temperatury zadane |
 | `time.<pokój>_poczatek_dnia` / `_nocy` | granice harmonogramu |
+| `switch.<pokój>_poza_domem` | tryb poza domem |
+| `number.<pokój>_temperatura_poza_domem` | zadana w trybie poza domem (domyślnie 20 °C) |
+| `number.<pokój>_wylacz_grzanie_przy_temperaturze_zewnetrznej` | próg wyłączenia grzania (domyślnie 15 °C); tylko gdy wybrano czujnik zewnętrzny |
 | `number.*` (kategoria konfiguracja) | histerezy, offsety poziomów, progi, min_hold, wyprzedzenie |
 | `sensor.<pokój>_poziom_grzania` | 0–3 |
-| `sensor.<pokój>_status` | wyłączone / bezczynny / grzanie / okno otwarte / brak czujnika |
+| `sensor.<pokój>_status` | wyłączone / bezczynny / grzanie / okno otwarte / ciepło na zewnątrz / brak czujnika |
 | `sensor.<pokój>_zadany_offset`, `sensor.<pokój>_zapisy_zigbee` | diagnostyka |
 
 Zmiana temperatury na karcie termostatu:
 - w presecie **Harmonogram** ustawia nadpisanie do najbliższej zmiany dzień/noc (atrybut `override_until`); ustawienie z powrotem wartości z harmonogramu kasuje nadpisanie,
-- w presecie **Dzień** / **Noc** zmienia na stałe temperaturę dzienną / nocną.
+- w presecie **Dzień** / **Noc** zmienia na stałe temperaturę dzienną / nocną,
+- przy włączonym **Poza domem** zmienia temperaturę poza domem.
 
-Atrybuty `climate` do debugowania: `status`, `level`, `offset`, `deficit`, `trend` (°C/h), `reason`, `target_source`, `override_until`, `last_level_change`. Atrybuty `deficit`, `trend` i `reason` nie trafiają do recordera.
+### Poza domem dla całego mieszkania
+
+Przełącznik jest w każdym pomieszczeniu osobno. Żeby mieć jeden dla całego mieszkania, dodaj pomocnika **Ustawienia → Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Grupa → Grupa przełączników** i dodaj do niej wszystkie `switch.*_poza_domem`. Przełączenie grupy przełącza wszystkie pokoje.
+
+### Temperatura zewnętrzna
+
+Czujnik wybierasz przy dodawaniu pomieszczenia albo w **Konfiguruj**. Może to być czujnik temperatury albo encja pogody (`weather.*`, brany jest jej atrybut `temperature`). Bez czujnika funkcja jest wyłączona i encja progu nie powstaje. Gdy czujnik jest niedostępny, zostaje ostatni stan, więc chwilowy brak odczytu nie przełącza głowic.
+
+Atrybuty `climate` do debugowania: `status`, `level`, `offset`, `deficit`, `trend` (°C/h), `reason`, `target_source` (`day`/`night`/`comfort`/`eco`/`override`/`away`), `override_until`, `last_level_change`, `away`, `outdoor_temperature`, `outdoor_warm`. Atrybuty `deficit`, `trend` i `reason` nie trafiają do recordera.
 
 ## Wskazówki
 

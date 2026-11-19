@@ -18,7 +18,11 @@
         "description": "Encje number z kalibracją (offsetem) głowic. Wykryte automatycznie: {detected}",
         "data": {
           "offset_entities": "Encje offsetu / kalibracji",
-          "window_sensors": "Czujniki okna (opcjonalnie)"
+          "window_sensors": "Czujniki okna (opcjonalnie)",
+          "outdoor_sensor": "Temperatura zewnętrzna (opcjonalnie)"
+        },
+        "data_description": {
+          "outdoor_sensor": "Czujnik temperatury albo encja pogody. Grzanie wyłącza się, gdy temperatura jest równa progowi lub wyższa (encja number, domyślnie 15 °C)."
         }
       }
     },
@@ -38,6 +42,8 @@
           "trvs": "Głowice",
           "offset_entities": "Encje offsetu / kalibracji",
           "window_sensors": "Czujniki okna",
+          "outdoor_sensor": "Temperatura zewnętrzna (opcjonalnie)",
+          "outdoor_hysteresis": "Histereza progu zewnętrznego",
           "window_open_delay": "Opóźnienie otwarcia okna",
           "window_close_delay": "Opóźnienie zamknięcia okna",
           "sensor_timeout": "Timeout czujnika pokojowego",
@@ -46,7 +52,9 @@
         },
         "data_description": {
           "sensor_timeout": "Brak raportu z czujnika przez ten czas = utrata czujnika, głowice regulują same z offsetem awaryjnym.",
-          "adopt_trv_setpoint": "Kręcenie pokrętłem głowicy ustawia nadpisanie do najbliższej zmiany dzień/noc. Wyłączone = integracja przywraca swoją wartość."
+          "adopt_trv_setpoint": "Kręcenie pokrętłem głowicy ustawia nadpisanie do najbliższej zmiany dzień/noc. Wyłączone = integracja przywraca swoją wartość.",
+          "outdoor_sensor": "Czujnik temperatury albo encja pogody. Grzanie wyłącza się, gdy temperatura jest równa progowi lub wyższa (encja number, domyślnie 15 °C).",
+          "outdoor_hysteresis": "Grzanie wraca dopiero, gdy temperatura zewnętrzna spadnie do progu minus ta wartość."
         }
       }
     },
@@ -69,26 +77,69 @@
       }
     },
     "number": {
-      "day_temp": { "name": "Temperatura dzień" },
-      "night_temp": { "name": "Temperatura noc" },
-      "hyst_on": { "name": "Histereza - start poniżej zadanej" },
-      "hyst_off": { "name": "Histereza - stop powyżej zadanej" },
-      "level_hyst": { "name": "Histereza poziomów" },
-      "idle_offset": { "name": "Offset - spoczynek (poziom 0)" },
-      "level1_offset": { "name": "Offset - poziom 1" },
-      "level2_offset": { "name": "Offset - poziom 2" },
-      "level2_threshold": { "name": "Poziom 2 powyżej niedogrzania" },
-      "level3_offset": { "name": "Offset - poziom 3" },
-      "level3_threshold": { "name": "Poziom 3 powyżej niedogrzania (0 = wył.)" },
-      "min_hold": { "name": "Minimalny czas między zmianami" },
-      "lookahead": { "name": "Wyprzedzenie trendu (0 = wył.)" }
+      "day_temp": {
+        "name": "Temperatura dzień"
+      },
+      "night_temp": {
+        "name": "Temperatura noc"
+      },
+      "away_temp": {
+        "name": "Temperatura poza domem"
+      },
+      "outdoor_cutoff": {
+        "name": "Wyłącz grzanie przy temperaturze zewnętrznej"
+      },
+      "hyst_on": {
+        "name": "Histereza - start poniżej zadanej"
+      },
+      "hyst_off": {
+        "name": "Histereza - stop powyżej zadanej"
+      },
+      "level_hyst": {
+        "name": "Histereza poziomów"
+      },
+      "idle_offset": {
+        "name": "Offset - spoczynek (poziom 0)"
+      },
+      "level1_offset": {
+        "name": "Offset - poziom 1"
+      },
+      "level2_offset": {
+        "name": "Offset - poziom 2"
+      },
+      "level2_threshold": {
+        "name": "Poziom 2 powyżej niedogrzania"
+      },
+      "level3_offset": {
+        "name": "Offset - poziom 3"
+      },
+      "level3_threshold": {
+        "name": "Poziom 3 powyżej niedogrzania (0 = wył.)"
+      },
+      "min_hold": {
+        "name": "Minimalny czas między zmianami"
+      },
+      "lookahead": {
+        "name": "Wyprzedzenie trendu (0 = wył.)"
+      }
+    },
+    "switch": {
+      "away": {
+        "name": "Poza domem"
+      }
     },
     "time": {
-      "day_start": { "name": "Początek dnia" },
-      "night_start": { "name": "Początek nocy" }
+      "day_start": {
+        "name": "Początek dnia"
+      },
+      "night_start": {
+        "name": "Początek nocy"
+      }
     },
     "sensor": {
-      "level": { "name": "Poziom grzania" },
+      "level": {
+        "name": "Poziom grzania"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -96,11 +147,16 @@
           "idle": "Bezczynny",
           "heating": "Grzanie",
           "window_open": "Okno otwarte",
+          "outdoor_warm": "Ciepło na zewnątrz",
           "sensor_lost": "Brak czujnika"
         }
       },
-      "offset": { "name": "Zadany offset" },
-      "writes": { "name": "Zapisy Zigbee" }
+      "offset": {
+        "name": "Zadany offset"
+      },
+      "writes": {
+        "name": "Zapisy Zigbee"
+      }
     }
   }
 }

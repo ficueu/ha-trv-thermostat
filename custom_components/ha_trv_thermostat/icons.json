@@ -1,0 +1,20 @@
+{
+  "entity": {
+    "switch": {
+      "away": {
+        "default": "mdi:home-export-outline",
+        "state": {
+          "off": "mdi:home-account"
+        }
+      }
+    },
+    "number": {
+      "away_temp": { "default": "mdi:home-thermometer-outline" },
+      "outdoor_cutoff": { "default": "mdi:sun-thermometer-outline" }
+    },
+    "sensor": {
+      "level": { "default": "mdi:radiator" },
+      "writes": { "default": "mdi:zigbee" }
+    }
+  }
+}

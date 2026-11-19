@@ -18,12 +18,15 @@ CONF_WINDOW_CLOSE_DELAY: Final = "window_close_delay"
 CONF_SENSOR_TIMEOUT: Final = "sensor_timeout"
 CONF_ADOPT_TRV_SETPOINT: Final = "adopt_trv_setpoint"
 CONF_FALLBACK_OFFSET: Final = "fallback_offset"
+CONF_OUTDOOR_SENSOR: Final = "outdoor_sensor"
+CONF_OUTDOOR_HYST: Final = "outdoor_hysteresis"
 
 DEFAULT_WINDOW_OPEN_DELAY: Final = 60  # s
 DEFAULT_WINDOW_CLOSE_DELAY: Final = 120  # s
 DEFAULT_SENSOR_TIMEOUT: Final = 120  # min
 DEFAULT_ADOPT_TRV_SETPOINT: Final = True
 DEFAULT_FALLBACK_OFFSET: Final = 0.0
+DEFAULT_OUTDOOR_HYST: Final = 1.0
 
 # --- runtime settings (persisted in Store, exposed as number/time entities) --
 S_DAY_TEMP: Final = "day_temp"
@@ -39,12 +42,16 @@ S_L3_OFFSET: Final = "level3_offset"
 S_L3_THRESHOLD: Final = "level3_threshold"
 S_MIN_HOLD: Final = "min_hold"  # minutes
 S_LOOKAHEAD: Final = "lookahead"  # minutes
+S_AWAY_TEMP: Final = "away_temp"
+S_OUTDOOR_CUTOFF: Final = "outdoor_cutoff"
 S_DAY_START: Final = "day_start"
 S_NIGHT_START: Final = "night_start"
 
 DEFAULT_SETTINGS: Final[dict] = {
     S_DAY_TEMP: 21.0,
     S_NIGHT_TEMP: 19.0,
+    S_AWAY_TEMP: 20.0,
+    S_OUTDOOR_CUTOFF: 15.0,
     S_HYST_ON: 0.3,
     S_HYST_OFF: 0.1,
     S_LEVEL_HYST: 0.2,

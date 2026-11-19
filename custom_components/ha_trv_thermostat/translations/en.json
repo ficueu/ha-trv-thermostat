@@ -18,7 +18,11 @@
         "description": "Calibration (offset) number entities of the TRVs. Auto-detected: {detected}",
         "data": {
           "offset_entities": "Offset / calibration entities",
-          "window_sensors": "Window sensors (optional)"
+          "window_sensors": "Window sensors (optional)",
+          "outdoor_sensor": "Outdoor temperature (optional)"
+        },
+        "data_description": {
+          "outdoor_sensor": "Temperature sensor or weather entity. Heating stops when it is at or above the cutoff (number entity, default 15 °C)."
         }
       }
     },
@@ -38,6 +42,8 @@
           "trvs": "TRVs",
           "offset_entities": "Offset / calibration entities",
           "window_sensors": "Window sensors",
+          "outdoor_sensor": "Outdoor temperature (optional)",
+          "outdoor_hysteresis": "Outdoor cutoff hysteresis",
           "window_open_delay": "Window open delay",
           "window_close_delay": "Window close delay",
           "sensor_timeout": "Room sensor timeout",
@@ -46,7 +52,9 @@
         },
         "data_description": {
           "sensor_timeout": "No report from the room sensor for this long = sensor lost, TRVs regulate on their own with the fallback offset.",
-          "adopt_trv_setpoint": "Turning the TRV knob sets a temporary override until the next day/night switch. Off = the integration reverts it."
+          "adopt_trv_setpoint": "Turning the TRV knob sets a temporary override until the next day/night switch. Off = the integration reverts it.",
+          "outdoor_sensor": "Temperature sensor or weather entity. Heating stops when it is at or above the cutoff (number entity, default 15 °C).",
+          "outdoor_hysteresis": "Heating is allowed again only when the outdoor temperature drops to cutoff minus this value."
         }
       }
     },
@@ -69,26 +77,69 @@
       }
     },
     "number": {
-      "day_temp": { "name": "Day temperature" },
-      "night_temp": { "name": "Night temperature" },
-      "hyst_on": { "name": "Hysteresis - start below target" },
-      "hyst_off": { "name": "Hysteresis - stop above target" },
-      "level_hyst": { "name": "Level hysteresis" },
-      "idle_offset": { "name": "Offset - idle (level 0)" },
-      "level1_offset": { "name": "Offset - level 1" },
-      "level2_offset": { "name": "Offset - level 2" },
-      "level2_threshold": { "name": "Level 2 above deficit" },
-      "level3_offset": { "name": "Offset - level 3" },
-      "level3_threshold": { "name": "Level 3 above deficit (0 = off)" },
-      "min_hold": { "name": "Minimum time between changes" },
-      "lookahead": { "name": "Trend lookahead (0 = off)" }
+      "day_temp": {
+        "name": "Day temperature"
+      },
+      "night_temp": {
+        "name": "Night temperature"
+      },
+      "away_temp": {
+        "name": "Away temperature"
+      },
+      "outdoor_cutoff": {
+        "name": "Heating off at outdoor temperature"
+      },
+      "hyst_on": {
+        "name": "Hysteresis - start below target"
+      },
+      "hyst_off": {
+        "name": "Hysteresis - stop above target"
+      },
+      "level_hyst": {
+        "name": "Level hysteresis"
+      },
+      "idle_offset": {
+        "name": "Offset - idle (level 0)"
+      },
+      "level1_offset": {
+        "name": "Offset - level 1"
+      },
+      "level2_offset": {
+        "name": "Offset - level 2"
+      },
+      "level2_threshold": {
+        "name": "Level 2 above deficit"
+      },
+      "level3_offset": {
+        "name": "Offset - level 3"
+      },
+      "level3_threshold": {
+        "name": "Level 3 above deficit (0 = off)"
+      },
+      "min_hold": {
+        "name": "Minimum time between changes"
+      },
+      "lookahead": {
+        "name": "Trend lookahead (0 = off)"
+      }
+    },
+    "switch": {
+      "away": {
+        "name": "Away"
+      }
     },
     "time": {
-      "day_start": { "name": "Day starts" },
-      "night_start": { "name": "Night starts" }
+      "day_start": {
+        "name": "Day starts"
+      },
+      "night_start": {
+        "name": "Night starts"
+      }
     },
     "sensor": {
-      "level": { "name": "Heating level" },
+      "level": {
+        "name": "Heating level"
+      },
       "status": {
         "name": "Status",
         "state": {
@@ -96,11 +147,16 @@
           "idle": "Idle",
           "heating": "Heating",
           "window_open": "Window open",
+          "outdoor_warm": "Warm outside",
           "sensor_lost": "Sensor lost"
         }
       },
-      "offset": { "name": "Commanded offset" },
-      "writes": { "name": "Zigbee writes" }
+      "offset": {
+        "name": "Commanded offset"
+      },
+      "writes": {
+        "name": "Zigbee writes"
+      }
     }
   }
 }

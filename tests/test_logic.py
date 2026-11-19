@@ -142,3 +142,22 @@ def test_quantize():
     assert L.quantize(3.3, 1, -9, 9) == 3.0
     assert L.quantize(21.3, 0.5, 5, 30) == 21.5
     assert L.quantize(2.0, 0.2, -12.8, 12.7) == 2.0
+
+
+def test_outdoor_cutoff_hysteresis():
+    f = L.outdoor_cutoff
+    assert f(14.9, 15, 1, False) is False
+    assert f(15.0, 15, 1, False) is True  # >= threshold -> cut off
+    assert f(14.5, 15, 1, True) is True  # still within hysteresis
+    assert f(14.0, 15, 1, True) is False  # released at threshold - hyst
+    assert f(None, 15, 1, True) is True  # unknown keeps state
+    assert f(None, 15, 1, False) is False
+
+
+def test_outdoor_warm_beats_fallback_and_resets_hold():
+    st = L.LoopState(level=2, level_since=10_000)
+    d = run(None, st, outdoor_warm=True)
+    assert d.status == L.Status.OUTDOOR and st.level == 0 and st.level_since is None
+    # user OFF and window still win over outdoor
+    assert run(19.0, st, outdoor_warm=True, active=False).status == L.Status.OFF
+    assert run(19.0, st, outdoor_warm=True, window_open=True).status == L.Status.WINDOW

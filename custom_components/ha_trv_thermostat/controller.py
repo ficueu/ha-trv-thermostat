@@ -73,6 +73,8 @@ from .const import (
     BACKOFF_S,
     CONF_ADOPT_TRV_SETPOINT,
     CONF_FALLBACK_OFFSET,
+    CONF_OUTDOOR_HYST,
+    CONF_OUTDOOR_SENSOR,
     CONF_OFFSETS,
     CONF_SENSOR_TIMEOUT,
     CONF_TEMP_SENSOR,
@@ -82,6 +84,7 @@ from .const import (
     CONF_WINDOWS,
     DEFAULT_ADOPT_TRV_SETPOINT,
     DEFAULT_FALLBACK_OFFSET,
+    DEFAULT_OUTDOOR_HYST,
     DEFAULT_SENSOR_TIMEOUT,
     DEFAULT_SETTINGS,
     DEFAULT_WINDOW_CLOSE_DELAY,
@@ -89,6 +92,7 @@ from .const import (
     DOMAIN,
     MAX_ATTEMPTS,
     PRESET_SCHEDULE,
+    S_AWAY_TEMP,
     S_DAY_START,
     S_DAY_TEMP,
     S_HYST_OFF,
@@ -104,6 +108,7 @@ from .const import (
     S_MIN_HOLD,
     S_NIGHT_START,
     S_NIGHT_TEMP,
+    S_OUTDOOR_CUTOFF,
     SENSOR_BAD_GRACE_S,
     SETPOINT_MIN_TOLERANCE,
     STARTUP_GRACE_S,
@@ -126,6 +131,7 @@ from .logic import (
     decide,
     is_day,
     next_transition,
+    outdoor_cutoff,
     quantize,
 )
 
@@ -183,6 +189,8 @@ class RoomController:
         self.sensor_timeout_s = float(cfg.get(CONF_SENSOR_TIMEOUT, DEFAULT_SENSOR_TIMEOUT)) * 60
         self.adopt_trv_setpoint = bool(cfg.get(CONF_ADOPT_TRV_SETPOINT, DEFAULT_ADOPT_TRV_SETPOINT))
         self.fallback_offset = float(cfg.get(CONF_FALLBACK_OFFSET, DEFAULT_FALLBACK_OFFSET))
+        self.outdoor_sensor: str | None = cfg.get(CONF_OUTDOOR_SENSOR) or None
+        self.outdoor_hyst = float(cfg.get(CONF_OUTDOOR_HYST, DEFAULT_OUTDOOR_HYST))
 
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
@@ -207,6 +215,9 @@ class RoomController:
         self.commanded_offset: float | None = None
         self.last_level_change: datetime | None = None
         self.writes = 0
+        self.away = False
+        self.outdoor_temp: float | None = None
+        self.outdoor_warm = False
 
         self._modes = {e: Actuator(e, KIND_MODE) for e in self.trvs}
         self._setpoints = {e: Actuator(e, KIND_SETPOINT) for e in self.trvs}
@@ -252,6 +263,8 @@ class RoomController:
         self.override_temp = _float(data.get("override_temp"))
         until = data.get("override_until")
         self.override_until = dt_util.parse_datetime(until) if until else None
+        self.away = bool(data.get("away", False))
+        self.outdoor_warm = bool(data.get("outdoor_warm", False)) and bool(self.outdoor_sensor)
         self._loop.level = int(data.get("level", 0) or 0)
         self._loop.level_since = _float(data.get("level_since"))
 
@@ -262,6 +275,8 @@ class RoomController:
             "preset": self.preset,
             "override_temp": self.override_temp,
             "override_until": self.override_until.isoformat() if self.override_until else None,
+            "away": self.away,
+            "outdoor_warm": self.outdoor_warm,
             "level": self._loop.level,
             "level_since": self._loop.level_since,
         }
@@ -277,6 +292,10 @@ class RoomController:
         self._unsubs.append(async_track_state_change_event(hass, [self.temp_sensor], self._on_temp))
         if self.windows:
             self._unsubs.append(async_track_state_change_event(hass, self.windows, self._on_window))
+        if self.outdoor_sensor:
+            self._unsubs.append(
+                async_track_state_change_event(hass, [self.outdoor_sensor], self._on_outdoor)
+            )
         if self.trvs:
             self._unsubs.append(async_track_state_change_event(hass, self.trvs, self._on_trv))
         if self.offset_entities:
@@ -331,6 +350,9 @@ class RoomController:
             self.override_until,
             self.window_open,
             self.commanded_offset,
+            self.away,
+            self.outdoor_temp,
+            self.outdoor_warm,
         )
         if not force and snap == self._snapshot:
             return
@@ -357,6 +379,10 @@ class RoomController:
     @callback
     def _on_tick(self, _now: datetime) -> None:
         self.async_evaluate("tick")
+
+    @callback
+    def _on_outdoor(self, _event: Event[EventStateChangedData]) -> None:
+        self.async_evaluate("outdoor temperature")
 
     @callback
     def _on_temp(self, event: Event[EventStateChangedData]) -> None:
@@ -414,6 +440,8 @@ class RoomController:
             return
         if self.decision.status not in (Status.IDLE, Status.HEATING, Status.FALLBACK):
             return
+        if self.away:
+            return  # away mode wins; the knob value gets reverted
         if old.state != new.state or new.state == HVACMode.OFF:
             return
         old_t = _float(old.attributes.get(ATTR_TEMPERATURE))
@@ -452,6 +480,16 @@ class RoomController:
         self.async_evaluate("hvac mode")
 
     @callback
+    def async_set_away(self, away: bool) -> None:
+        """Away mode on/off. Clears any temporary override."""
+        if away == self.away:
+            return
+        self.away = away
+        self.override_temp = self.override_until = None
+        self._save()
+        self.async_evaluate("away on" if away else "away off")
+
+    @callback
     def async_set_preset(self, preset: str) -> None:
         """Change preset; clears any override."""
         self.preset = preset
@@ -464,7 +502,9 @@ class RoomController:
     def async_set_target(self, temp: float) -> None:
         """Target set from the climate card."""
         temp = max(TEMP_MIN, min(TEMP_MAX, float(temp)))
-        if self.preset == PRESET_COMFORT:
+        if self.away:
+            self.settings[S_AWAY_TEMP] = temp
+        elif self.preset == PRESET_COMFORT:
             self.settings[S_DAY_TEMP] = temp
             self.override_temp = self.override_until = None
         elif self.preset == PRESET_ECO:
@@ -512,6 +552,8 @@ class RoomController:
         return float(self.settings[S_DAY_TEMP] if day else self.settings[S_NIGHT_TEMP])
 
     def _resolve_target(self, now_dt: datetime) -> tuple[float, str]:
+        if self.away:
+            return float(self.settings[S_AWAY_TEMP]), "away"
         if self.override_temp is not None:
             return self.override_temp, "override"
         if self.preset == PRESET_COMFORT:
@@ -550,6 +592,27 @@ class RoomController:
         if now - self._last_temp_ts > self.sensor_timeout_s:
             return None
         return self._last_temp
+
+    def _update_outdoor(self) -> None:
+        if not self.outdoor_sensor:
+            self.outdoor_temp, self.outdoor_warm = None, False
+            return
+        state = self.hass.states.get(self.outdoor_sensor)
+        if state is None or state.state in BAD_STATES:
+            self.outdoor_temp = None
+        elif state.domain == "weather":
+            self.outdoor_temp = _float(state.attributes.get(ATTR_TEMPERATURE))
+        else:
+            self.outdoor_temp = _float(state.state)
+        warm = outdoor_cutoff(
+            self.outdoor_temp,
+            float(self.settings[S_OUTDOOR_CUTOFF]),
+            self.outdoor_hyst,
+            self.outdoor_warm,
+        )
+        if warm != self.outdoor_warm:
+            self.outdoor_warm = warm
+            self._save()
 
     def _update_window(self, now: float) -> None:
         if not self.windows:
@@ -594,6 +657,7 @@ class RoomController:
         target, source = self._resolve_target(now_dt)
         temp = self._read_room_temp(now)
         self._update_window(now)
+        self._update_outdoor()
         while self._samples and self._samples[0][0] < now - TREND_HISTORY_S:
             self._samples.popleft()
         slope = compute_slope(list(self._samples), now, TREND_WINDOW_S)
@@ -606,6 +670,7 @@ class RoomController:
             now=now,
             active=self.hvac_mode != HVACMode.OFF,
             window_open=self.window_open,
+            outdoor_warm=self.outdoor_warm,
             slope_per_h=slope,
         )
         prev = self.decision
@@ -640,7 +705,7 @@ class RoomController:
                 act.desired = None
             self.commanded_offset = None
             return
-        if decision.status in (Status.OFF, Status.WINDOW):
+        if decision.status in (Status.OFF, Status.WINDOW, Status.OUTDOOR):
             for act in self._modes.values():
                 act.desired = HVACMode.OFF
             for act in self._setpoints.values():
