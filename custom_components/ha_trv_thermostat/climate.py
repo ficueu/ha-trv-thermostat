@@ -20,7 +20,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import PRESET_SCHEDULE
 from .controller import TEMP_MAX, TEMP_MIN, RoomController
-from .entity import TrvOffsetEntity
+from .entity import TrvThermostatEntity
 from .logic import Status
 
 
@@ -28,10 +28,10 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the climate entity."""
-    async_add_entities([TrvOffsetClimate(entry.runtime_data)])
+    async_add_entities([TrvThermostatClimate(entry.runtime_data)])
 
 
-class TrvOffsetClimate(TrvOffsetEntity, ClimateEntity):
+class TrvThermostatClimate(TrvThermostatEntity, ClimateEntity):
     """Room thermostat driving TRVs via calibration offset."""
 
     _attr_name = None

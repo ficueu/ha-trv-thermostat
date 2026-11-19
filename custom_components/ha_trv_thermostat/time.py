@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import S_DAY_START, S_NIGHT_START, parse_time
 from .controller import RoomController
-from .entity import TrvOffsetEntity
+from .entity import TrvThermostatEntity
 
 TIMES = (
     TimeEntityDescription(key=S_DAY_START, translation_key=S_DAY_START),
@@ -24,10 +24,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up time entities."""
     ctrl: RoomController = entry.runtime_data
-    async_add_entities(TrvOffsetTime(ctrl, desc) for desc in TIMES)
+    async_add_entities(TrvThermostatTime(ctrl, desc) for desc in TIMES)
 
 
-class TrvOffsetTime(TrvOffsetEntity, TimeEntity):
+class TrvThermostatTime(TrvThermostatEntity, TimeEntity):
     """Schedule boundary."""
 
     def __init__(self, ctrl: RoomController, description: TimeEntityDescription) -> None:

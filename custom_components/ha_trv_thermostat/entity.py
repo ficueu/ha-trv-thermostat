@@ -8,7 +8,7 @@ from homeassistant.helpers.entity import Entity
 from .controller import RoomController
 
 
-class TrvOffsetEntity(Entity):
+class TrvThermostatEntity(Entity):
     """Entity bound to a RoomController."""
 
     _attr_has_entity_name = True

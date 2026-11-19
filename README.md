@@ -1,4 +1,4 @@
-# TRV Offset Thermostat
+# HA TRV Thermostat
 
 Integracja Home Assistant do sterowania głowicami Zigbee (TRV) na podstawie **zewnętrznego czujnika temperatury w pomieszczeniu**. Działa jak Better Thermostat, ale:
 
@@ -53,15 +53,15 @@ W teście symulującym kilka godzin pracy dwóch głowic (start/stop grzania, zm
 
 [![Otwórz w HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ficueu&repository=ha-trv-thermostat&category=integration)
 
-albo ręcznie: **HACS → ⋮ → Custom repositories** → URL `https://github.com/ficueu/ha-trv-thermostat`, typ **Integration** → **Add**. Następnie na liście znajdź **TRV Offset Thermostat** → **Download** i zrestartuj HA. Nowe wersje pojawiają się w HA jako zwykłe aktualizacje (encja `update`).
+albo ręcznie: **HACS → ⋮ → Custom repositories** → URL `https://github.com/ficueu/ha-trv-thermostat`, typ **Integration** → **Add**. Następnie na liście znajdź **HA TRV Thermostat** → **Download** i zrestartuj HA. Nowe wersje pojawiają się w HA jako zwykłe aktualizacje (encja `update`).
 
 ### Ręcznie
 
-Skopiuj katalog `custom_components/trv_offset` do `/config/custom_components/trv_offset` i zrestartuj HA.
+Skopiuj katalog `custom_components/ha_trv_thermostat` do `/config/custom_components/ha_trv_thermostat` i zrestartuj HA.
 
 ### Konfiguracja
 
-1. **Ustawienia → Urządzenia i usługi → Dodaj integrację → TRV Offset Thermostat**. Jedno pomieszczenie = jeden wpis:
+1. **Ustawienia → Urządzenia i usługi → Dodaj integrację → HA TRV Thermostat**. Jedno pomieszczenie = jeden wpis:
    - nazwa, czujnik temperatury, głowice (może być kilka),
    - encje offsetu: wykrywane automatycznie na urządzeniu głowicy (`local_temperature_calibration` w Z2M, `local_temperature_offset` w ZHA); sprawdź, czy wybrały się właściwe,
    - opcjonalnie czujniki okna.
@@ -98,7 +98,7 @@ Atrybuty `climate` do debugowania: `status`, `level`, `offset`, `deficit`, `tren
   ```yaml
   logger:
     logs:
-      custom_components.trv_offset: debug
+      custom_components.ha_trv_thermostat: debug
   ```
   Na poziomie `info` logowana jest każda zmiana poziomu z powodem, na `debug` każdy zapis do głowicy.
 
@@ -134,7 +134,7 @@ pytest
 
 ## Wydawanie wersji
 
-1. Podbij `version` w `custom_components/trv_offset/manifest.json`.
+1. Podbij `version` w `custom_components/ha_trv_thermostat/manifest.json`.
 2. Commit, a potem `git tag vX.Y.Z && git push --tags`.
 3. Workflow `Release` sprawdzi zgodność tagu z manifestem i utworzy release, a HACS pokaże aktualizację.
 

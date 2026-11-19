@@ -13,7 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .controller import RoomController
-from .entity import TrvOffsetEntity
+from .entity import TrvThermostatEntity
 from .logic import Status
 
 
@@ -27,7 +27,7 @@ async def async_setup_entry(
     )
 
 
-class LevelSensor(TrvOffsetEntity, SensorEntity):
+class LevelSensor(TrvThermostatEntity, SensorEntity):
     """Current heating level (0 = not heating)."""
 
     _attr_translation_key = "level"
@@ -43,7 +43,7 @@ class LevelSensor(TrvOffsetEntity, SensorEntity):
         return self._ctrl.decision.level if self._ctrl.decision else None
 
 
-class StatusSensor(TrvOffsetEntity, SensorEntity):
+class StatusSensor(TrvThermostatEntity, SensorEntity):
     """Controller status."""
 
     _attr_translation_key = "status"
@@ -60,7 +60,7 @@ class StatusSensor(TrvOffsetEntity, SensorEntity):
         return self._ctrl.decision.status.value if self._ctrl.decision else None
 
 
-class OffsetSensor(TrvOffsetEntity, SensorEntity):
+class OffsetSensor(TrvThermostatEntity, SensorEntity):
     """Offset currently commanded to the TRVs."""
 
     _attr_translation_key = "offset"
@@ -78,7 +78,7 @@ class OffsetSensor(TrvOffsetEntity, SensorEntity):
         return self._ctrl.commanded_offset
 
 
-class WritesSensor(TrvOffsetEntity, SensorEntity):
+class WritesSensor(TrvThermostatEntity, SensorEntity):
     """Number of Zigbee writes since HA start - to prove the network stays quiet."""
 
     _attr_translation_key = "writes"

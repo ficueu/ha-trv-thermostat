@@ -1,4 +1,4 @@
-"""Pure control logic for TRV Offset Thermostat.
+"""Pure control logic for HA TRV Thermostat.
 
 No Home Assistant imports here on purpose - everything in this module is
 deterministic and unit-testable with plain pytest.

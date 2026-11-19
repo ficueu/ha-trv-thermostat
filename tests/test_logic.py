@@ -7,7 +7,7 @@ from pathlib import Path
 
 _spec = importlib.util.spec_from_file_location(
     "trv_logic",
-    Path(__file__).parents[1] / "custom_components" / "trv_offset" / "logic.py",
+    Path(__file__).parents[1] / "custom_components" / "ha_trv_thermostat" / "logic.py",
 )
 L = importlib.util.module_from_spec(_spec)
 sys.modules["trv_logic"] = L

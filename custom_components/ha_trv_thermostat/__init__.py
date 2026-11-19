@@ -1,4 +1,4 @@
-"""TRV Offset Thermostat - room control of Zigbee TRVs via calibration offset."""
+"""HA TRV Thermostat - room control of Zigbee TRVs via calibration offset."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ from .controller import RoomController
 
 PLATFORMS = [Platform.CLIMATE, Platform.NUMBER, Platform.SENSOR, Platform.TIME]
 
-type TrvOffsetConfigEntry = ConfigEntry[RoomController]
+type TrvThermostatConfigEntry = ConfigEntry[RoomController]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: TrvOffsetConfigEntry) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: TrvThermostatConfigEntry) -> bool:
     """Set up one room."""
     ctrl = RoomController(hass, entry)
     await ctrl.async_load()
@@ -26,7 +26,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: TrvOffsetConfigEntry) ->
     return True
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: TrvOffsetConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: TrvThermostatConfigEntry) -> bool:
     """Unload a room."""
     ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if ok:

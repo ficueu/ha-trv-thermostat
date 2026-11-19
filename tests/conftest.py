@@ -28,7 +28,7 @@ def auto_enable_custom_integrations(enable_custom_integrations):
 @pytest.fixture(autouse=True)
 def no_write_spacing(monkeypatch):
     """No real sleeps between writes in tests."""
-    monkeypatch.setattr("custom_components.trv_offset.controller.WRITE_SPACING_S", 0)
+    monkeypatch.setattr("custom_components.ha_trv_thermostat.controller.WRITE_SPACING_S", 0)
 
 
 class FakeTRV(ClimateEntity):

@@ -29,7 +29,7 @@ from .const import (
     S_NIGHT_TEMP,
 )
 from .controller import RoomController
-from .entity import TrvOffsetEntity
+from .entity import TrvThermostatEntity
 
 C = UnitOfTemperature.CELSIUS
 
@@ -97,10 +97,10 @@ async def async_setup_entry(
 ) -> None:
     """Set up number entities."""
     ctrl: RoomController = entry.runtime_data
-    async_add_entities(TrvOffsetNumber(ctrl, desc) for desc in NUMBERS)
+    async_add_entities(TrvThermostatNumber(ctrl, desc) for desc in NUMBERS)
 
 
-class TrvOffsetNumber(TrvOffsetEntity, NumberEntity):
+class TrvThermostatNumber(TrvThermostatEntity, NumberEntity):
     """A runtime setting."""
 
     def __init__(self, ctrl: RoomController, description: NumberEntityDescription) -> None:

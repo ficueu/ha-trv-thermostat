@@ -1,11 +1,11 @@
-"""Constants for TRV Offset Thermostat."""
+"""Constants for HA TRV Thermostat."""
 
 from __future__ import annotations
 
 from datetime import time
 from typing import Final
 
-DOMAIN: Final = "trv_offset"
+DOMAIN: Final = "ha_trv_thermostat"
 STORAGE_VERSION: Final = 1
 
 # --- static config (config entry data / options) ---------------------------

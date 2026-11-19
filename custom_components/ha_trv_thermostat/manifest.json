@@ -1,6 +1,6 @@
 {
-  "domain": "trv_offset",
-  "name": "TRV Offset Thermostat",
+  "domain": "ha_trv_thermostat",
+  "name": "HA TRV Thermostat",
   "codeowners": ["@ficueu"],
   "config_flow": true,
   "dependencies": [],

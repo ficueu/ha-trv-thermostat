@@ -109,7 +109,7 @@ def _num(vmin: float, vmax: float, step: float, unit: str | None = None) -> Numb
     )
 
 
-class TrvOffsetConfigFlow(ConfigFlow, domain=DOMAIN):
+class TrvThermostatConfigFlow(ConfigFlow, domain=DOMAIN):
     """Add a room."""
 
     VERSION = 1
@@ -171,10 +171,10 @@ class TrvOffsetConfigFlow(ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Options."""
-        return TrvOffsetOptionsFlow()
+        return TrvThermostatOptionsFlow()
 
 
-class TrvOffsetOptionsFlow(OptionsFlow):
+class TrvThermostatOptionsFlow(OptionsFlow):
     """Change entities and advanced options."""
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

@@ -15,7 +15,7 @@ from pytest_homeassistant_custom_component.common import (
     async_fire_time_changed,
 )
 
-DOMAIN = "trv_offset"
+DOMAIN = "ha_trv_thermostat"
 ENTRY_DATA = {
     "temperature_sensor": "sensor.salon_temp",
     "trvs": ["climate.trv_1", "climate.trv_2"],

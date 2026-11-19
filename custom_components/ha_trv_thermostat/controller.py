@@ -234,7 +234,7 @@ class RoomController:
         return DeviceInfo(
             identifiers={(DOMAIN, self.entry.entry_id)},
             name=self.entry.title,
-            manufacturer="TRV Offset Thermostat",
+            manufacturer="HA TRV Thermostat",
             model="Room controller",
             entry_type=DeviceEntryType.SERVICE,
         )
