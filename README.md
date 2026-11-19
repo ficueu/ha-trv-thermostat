@@ -99,7 +99,7 @@ Atrybuty `climate` do debugowania: `status`, `level`, `deficit`, `trend` (°C/h)
 
 ### Aktualizacja z wcześniejszych wersji
 
-Wspólne offsety pokoju z wersji 1.0–1.1 zostają skopiowane do każdej głowicy, a stare encje offsetów pokoju znikają same. Encje głowic usuniętych z pokoju w **Konfiguruj** też są sprzątane automatycznie.
+Wspólne offsety pokoju z wersji 1.0 zostają skopiowane do każdej głowicy, a stare encje offsetów pokoju znikają same. Encje głowic usuniętych z pokoju w **Konfiguruj** też są sprzątane automatycznie.
 
 ### Poza domem dla całego mieszkania
 
