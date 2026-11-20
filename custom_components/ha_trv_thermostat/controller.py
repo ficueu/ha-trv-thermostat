@@ -43,8 +43,11 @@ from homeassistant.components.number import (
     SERVICE_SET_VALUE,
 )
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.components.cover import ATTR_CURRENT_POSITION, DOMAIN as COVER_DOMAIN
 from homeassistant.const import (
     ATTR_ENTITY_ID,
+    SERVICE_CLOSE_COVER,
+    SERVICE_OPEN_COVER,
     ATTR_TEMPERATURE,
     STATE_ON,
     STATE_UNAVAILABLE,
@@ -73,7 +76,11 @@ from homeassistant.util import dt as dt_util
 from .const import (
     ADOPT_GUARD_S,
     BACKOFF_S,
+    COVER_GUARD_S,
+    COVER_MANUAL_POSITION,
     CONF_ADOPT_TRV_SETPOINT,
+    CONF_COVER_DAYLIGHT_ONLY,
+    CONF_COVERS,
     CONF_FALLBACK_OFFSET,
     CONF_OUTDOOR_HYST,
     CONF_OUTDOOR_SENSOR,
@@ -85,6 +92,7 @@ from .const import (
     CONF_WINDOW_OPEN_DELAY,
     CONF_WINDOWS,
     DEFAULT_ADOPT_TRV_SETPOINT,
+    DEFAULT_COVER_DAYLIGHT_ONLY,
     DEFAULT_FALLBACK_OFFSET,
     DEFAULT_OUTDOOR_HYST,
     DEFAULT_SENSOR_TIMEOUT,
@@ -96,6 +104,7 @@ from .const import (
     PRESET_SCHEDULE,
     S_AWAY_TEMP,
     S_BOOST_DURATION,
+    S_COVER_DEFICIT,
     S_DAY_START,
     S_DAY_TEMP,
     S_HYST_OFF,
@@ -146,6 +155,7 @@ KIND_SETPOINT = "setpoint"
 KIND_OFFSET = "offset"
 SETPOINT_MIN = "min"  # sentinel: emulate "off" with the TRV's min_temp
 SETPOINT_MAX = "max"  # sentinel: boost -> TRV's max_temp, valve fully open
+COVER_OPEN, COVER_OPENING, COVER_CLOSING, COVER_CLOSED = "open", "opening", "closing", "closed"
 TEMP_MIN = 5.0
 TEMP_MAX = 30.0
 
@@ -195,6 +205,10 @@ class RoomController:
         self.fallback_offset = float(cfg.get(CONF_FALLBACK_OFFSET, DEFAULT_FALLBACK_OFFSET))
         self.outdoor_sensor: str | None = cfg.get(CONF_OUTDOOR_SENSOR) or None
         self.outdoor_hyst = float(cfg.get(CONF_OUTDOOR_HYST, DEFAULT_OUTDOOR_HYST))
+        self.covers: list[str] = list(cfg.get(CONF_COVERS) or [])
+        self.cover_daylight_only = bool(
+            cfg.get(CONF_COVER_DAYLIGHT_ONLY, DEFAULT_COVER_DAYLIGHT_ONLY)
+        )
 
         self._store: Store[dict[str, Any]] = Store(
             hass, STORAGE_VERSION, f"{DOMAIN}.{entry.entry_id}"
@@ -222,6 +236,12 @@ class RoomController:
         self.away = False
         self.boost_until: datetime | None = None
         self._boost_timer: CALLBACK_TYPE | None = None
+        self.covers_enabled = True
+        # covers we opened (and will close again) / covers already dealt with
+        # in the current heating episode (never reopened after a manual close)
+        self.covers_owned: set[str] = set()
+        self._covers_handled: set[str] = set()
+        self._cover_cmd_ts: dict[str, float] = {}
         self.outdoor_temp: float | None = None
         self.outdoor_warm = False
 
@@ -283,6 +303,9 @@ class RoomController:
         self.away = bool(data.get("away", False))
         boost = data.get("boost_until")
         self.boost_until = dt_util.parse_datetime(boost) if boost else None
+        self.covers_enabled = bool(data.get("covers_enabled", True))
+        self.covers_owned = {c for c in data.get("covers_owned", []) if c in self.covers}
+        self._covers_handled = {c for c in data.get("covers_handled", []) if c in self.covers}
         self.outdoor_warm = bool(data.get("outdoor_warm", False)) and bool(self.outdoor_sensor)
         self._loop.level = int(data.get("level", 0) or 0)
         self._loop.level_since = _float(data.get("level_since"))
@@ -297,6 +320,9 @@ class RoomController:
             "trv_offsets": self.trv_offsets,
             "away": self.away,
             "boost_until": self.boost_until.isoformat() if self.boost_until else None,
+            "covers_enabled": self.covers_enabled,
+            "covers_owned": sorted(self.covers_owned),
+            "covers_handled": sorted(self._covers_handled),
             "outdoor_warm": self.outdoor_warm,
             "level": self._loop.level,
             "level_since": self._loop.level_since,
@@ -317,6 +343,10 @@ class RoomController:
             self._unsubs.append(
                 async_track_state_change_event(hass, [self.outdoor_sensor], self._on_outdoor)
             )
+        if self.covers:
+            self._unsubs.append(async_track_state_change_event(hass, self.covers, self._on_cover))
+            if self.cover_daylight_only:
+                self._unsubs.append(async_track_state_change_event(hass, ["sun.sun"], self._on_sun))
         if self.trvs:
             self._unsubs.append(async_track_state_change_event(hass, self.trvs, self._on_trv))
         if self.offset_entities:
@@ -376,6 +406,8 @@ class RoomController:
             tuple(sorted(self.commanded_offsets.items())),
             self.away,
             self.boost_until,
+            tuple(sorted(self.covers_owned)),
+            self.covers_enabled,
             self.outdoor_temp,
             self.outdoor_warm,
         )
@@ -409,6 +441,31 @@ class RoomController:
     @callback
     def _on_outdoor(self, _event: Event[EventStateChangedData]) -> None:
         self.async_evaluate("outdoor temperature")
+
+    @callback
+    def _on_sun(self, _event: Event[EventStateChangedData]) -> None:
+        self.async_evaluate("sun")
+
+    @callback
+    def _on_cover(self, event: Event[EventStateChangedData]) -> None:
+        """Someone else moved a cover we opened -> hands off until the episode ends."""
+        new = event.data["new_state"]
+        if new is None or new.entity_id not in self.covers_owned:
+            return
+        if _now_ts() - self._cover_cmd_ts.get(new.entity_id, 0.0) < COVER_GUARD_S:
+            return
+        pos = _float(new.attributes.get(ATTR_CURRENT_POSITION))
+        if new.state in (COVER_CLOSING, COVER_CLOSED) or (
+            pos is not None and pos < COVER_MANUAL_POSITION
+        ):
+            _LOGGER.info(
+                "%s: %s moved by hand, no longer controlled this heating cycle",
+                self.entry.title,
+                new.entity_id,
+            )
+            self.covers_owned.discard(new.entity_id)
+            self._save()
+            self._notify()
 
     @callback
     def _on_temp(self, event: Event[EventStateChangedData]) -> None:
@@ -523,6 +580,13 @@ class RoomController:
         self._save()
         self._schedule_boost_end()
         self.async_evaluate("boost start")
+
+    @callback
+    def async_set_covers_enabled(self, enabled: bool) -> None:
+        """Curtain control on/off (off also closes what we opened)."""
+        self.covers_enabled = enabled
+        self._save()
+        self.async_evaluate("covers on" if enabled else "covers off")
 
     @callback
     def async_stop_boost(self) -> None:
@@ -796,6 +860,7 @@ class RoomController:
         self.target, self.target_source = target, source
         self.room_temp, self.slope = temp, slope
         self._update_desired(decision, target)
+        self._update_covers(decision)
         self._schedule_apply()
         self._notify()
 
@@ -840,6 +905,69 @@ class RoomController:
             )
             offsets[eid] = act.desired
         self.commanded_offsets = offsets
+
+    # ------------------------------------------------------------------ #
+    # Curtains
+    # ------------------------------------------------------------------ #
+
+    def _daylight(self) -> bool:
+        if not self.cover_daylight_only:
+            return True
+        sun = self.hass.states.get("sun.sun")
+        if sun is not None and sun.state in ("above_horizon", "below_horizon"):
+            return sun.state == "above_horizon"
+        return is_day(  # no sun integration -> day period of the schedule
+            dt_util.now().time(),
+            parse_time(self.settings[S_DAY_START]),
+            parse_time(self.settings[S_NIGHT_START]),
+        )
+
+    @callback
+    def _update_covers(self, decision: Decision) -> None:
+        """Open closed curtains on a big deficit, close the ones we opened afterwards.
+
+        Episode = one continuous heating period. Each cover is considered at most
+        once per episode, so a curtain closed by hand is never reopened.
+        """
+        if not self.covers:
+            return
+        allowed = self.covers_enabled and self._daylight()
+        status = decision.status
+        if allowed and status in (Status.WINDOW, Status.FALLBACK, Status.BOOST):
+            return  # leave curtains as they are
+        if not allowed or status != Status.HEATING:
+            for eid in list(self.covers_owned):
+                state = self.hass.states.get(eid)
+                if state is not None and state.state in (COVER_OPEN, COVER_OPENING):
+                    self._cover_command(eid, SERVICE_CLOSE_COVER)
+                self.covers_owned.discard(eid)
+            if self._covers_handled:
+                self._covers_handled.clear()
+                self._save()
+            return
+        deficit = decision.deficit
+        if deficit is None or deficit < float(self.settings[S_COVER_DEFICIT]) - 1e-6:
+            return
+        for eid in self.covers:
+            if eid in self._covers_handled:
+                continue
+            self._covers_handled.add(eid)
+            state = self.hass.states.get(eid)
+            if state is not None and state.state == COVER_CLOSED:
+                self.covers_owned.add(eid)
+                self._cover_command(eid, SERVICE_OPEN_COVER)
+            self._save()
+
+    @callback
+    def _cover_command(self, entity_id: str, service: str) -> None:
+        _LOGGER.info("%s: %s %s", self.entry.title, service, entity_id)
+        self._cover_cmd_ts[entity_id] = _now_ts()
+        self._save()
+        self.hass.async_create_task(
+            self.hass.services.async_call(
+                COVER_DOMAIN, service, {ATTR_ENTITY_ID: entity_id}, blocking=False
+            )
+        )
 
     # ------------------------------------------------------------------ #
     # Actuation

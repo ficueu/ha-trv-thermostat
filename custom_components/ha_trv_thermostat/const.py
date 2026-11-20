@@ -20,6 +20,8 @@ CONF_ADOPT_TRV_SETPOINT: Final = "adopt_trv_setpoint"
 CONF_FALLBACK_OFFSET: Final = "fallback_offset"
 CONF_OUTDOOR_SENSOR: Final = "outdoor_sensor"
 CONF_OUTDOOR_HYST: Final = "outdoor_hysteresis"
+CONF_COVERS: Final = "covers"
+CONF_COVER_DAYLIGHT_ONLY: Final = "cover_daylight_only"
 
 DEFAULT_WINDOW_OPEN_DELAY: Final = 60  # s
 DEFAULT_WINDOW_CLOSE_DELAY: Final = 120  # s
@@ -27,6 +29,7 @@ DEFAULT_SENSOR_TIMEOUT: Final = 120  # min
 DEFAULT_ADOPT_TRV_SETPOINT: Final = True
 DEFAULT_FALLBACK_OFFSET: Final = 0.0
 DEFAULT_OUTDOOR_HYST: Final = 1.0
+DEFAULT_COVER_DAYLIGHT_ONLY: Final = True
 
 # --- runtime settings (persisted in Store, exposed as number/time entities) --
 S_DAY_TEMP: Final = "day_temp"
@@ -45,6 +48,7 @@ S_LOOKAHEAD: Final = "lookahead"  # minutes
 S_AWAY_TEMP: Final = "away_temp"
 S_OUTDOOR_CUTOFF: Final = "outdoor_cutoff"
 S_BOOST_DURATION: Final = "boost_duration"  # minutes
+S_COVER_DEFICIT: Final = "cover_deficit"
 S_DAY_START: Final = "day_start"
 S_NIGHT_START: Final = "night_start"
 
@@ -54,6 +58,7 @@ DEFAULT_SETTINGS: Final[dict] = {
     S_AWAY_TEMP: 20.0,
     S_OUTDOOR_CUTOFF: 15.0,
     S_BOOST_DURATION: 15.0,
+    S_COVER_DEFICIT: 1.0,
     S_HYST_ON: 0.3,
     S_HYST_OFF: 0.1,
     S_LEVEL_HYST: 0.2,
@@ -81,6 +86,8 @@ VERIFY_DELAY_S: Final = 90  # wait this long for the TRV to confirm a write
 MAX_ATTEMPTS: Final = 3  # quick retries before backing off
 BACKOFF_S: Final = 1800  # then retry at most every 30 min
 ADOPT_GUARD_S: Final = 180  # ignore TRV setpoint reports this long after our write
+COVER_GUARD_S: Final = 180  # cover moves within this time after our command are ours
+COVER_MANUAL_POSITION: Final = 90  # owned cover below this position = moved by hand
 WRITE_SPACING_S: Final = 0.3  # gap between consecutive Zigbee writes
 SETPOINT_MIN_TOLERANCE: Final = 0.26  # TRV setpoint within +-0.25 is "good enough"
 TREND_WINDOW_S: Final = 1200

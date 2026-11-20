@@ -10,6 +10,7 @@ from homeassistant.components.climate import (
     ClimateEntityFeature,
     HVACMode,
 )
+from homeassistant.components.cover import CoverEntity, CoverEntityFeature
 from homeassistant.components.number import NumberEntity
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
@@ -97,6 +98,43 @@ class FakeOffset(NumberEntity):
             self.async_write_ha_state()
 
 
+class FakeCover(CoverEntity):
+    """Curtain motor stand-in. ``move()`` simulates someone using the remote."""
+
+    _attr_should_poll = False
+    _attr_supported_features = (
+        CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.SET_POSITION
+    )
+
+    def __init__(self, name: str) -> None:
+        self._attr_name = name
+        self._attr_unique_id = name
+        self._pos = 0
+        self.calls: list[str] = []
+
+    @property
+    def current_cover_position(self) -> int:
+        return self._pos
+
+    @property
+    def is_closed(self) -> bool:
+        return self._pos == 0
+
+    async def async_open_cover(self, **kwargs: Any) -> None:
+        self.calls.append("open")
+        self._pos = 100
+        self.async_write_ha_state()
+
+    async def async_close_cover(self, **kwargs: Any) -> None:
+        self.calls.append("close")
+        self._pos = 0
+        self.async_write_ha_state()
+
+    def move(self, pos: int) -> None:
+        self._pos = pos
+        self.async_write_ha_state()
+
+
 @pytest.fixture
 async def fake_devices(hass: HomeAssistant):
     """Two TRVs (one without 'off' mode) + their offset numbers."""
@@ -107,6 +145,9 @@ async def fake_devices(hass: HomeAssistant):
     off2 = FakeOffset("TRV 2 calibration")
     setup_test_component_platform(hass, "climate", [trv1, trv2])
     setup_test_component_platform(hass, "number", [off1, off2])
+    cover = FakeCover("Zaslona salon")
+    setup_test_component_platform(hass, "cover", [cover])
+    assert await async_setup_component(hass, "cover", {"cover": {"platform": "test"}})
     assert await async_setup_component(hass, "climate", {"climate": {"platform": "test"}})
     assert await async_setup_component(hass, "number", {"number": {"platform": "test"}})
     hass.states.async_set(
@@ -114,4 +155,5 @@ async def fake_devices(hass: HomeAssistant):
     )
     hass.states.async_set("binary_sensor.salon_okno", "off", {"device_class": "window"})
     await hass.async_block_till_done()
-    return {"trv1": trv1, "trv2": trv2, "off1": off1, "off2": off2}
+    hass.states.async_set("sun.sun", "above_horizon")
+    return {"trv1": trv1, "trv2": trv2, "off1": off1, "off2": off2, "cover": cover}

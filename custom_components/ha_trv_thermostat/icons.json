@@ -17,6 +17,9 @@
       },
       "boost_duration": {
         "default": "mdi:timer-outline"
+      },
+      "cover_deficit": {
+        "default": "mdi:curtains"
       }
     },
     "sensor": {
@@ -32,6 +35,12 @@
         "default": "mdi:home-export-outline",
         "state": {
           "off": "mdi:home-account"
+        }
+      },
+      "covers": {
+        "default": "mdi:curtains",
+        "state": {
+          "off": "mdi:curtains-closed"
         }
       }
     }

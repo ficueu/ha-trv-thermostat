@@ -22,6 +22,8 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_ADOPT_TRV_SETPOINT,
+    CONF_COVER_DAYLIGHT_ONLY,
+    CONF_COVERS,
     CONF_FALLBACK_OFFSET,
     CONF_OUTDOOR_HYST,
     CONF_OUTDOOR_SENSOR,
@@ -33,6 +35,7 @@ from .const import (
     CONF_WINDOW_OPEN_DELAY,
     CONF_WINDOWS,
     DEFAULT_ADOPT_TRV_SETPOINT,
+    DEFAULT_COVER_DAYLIGHT_ONLY,
     DEFAULT_FALLBACK_OFFSET,
     DEFAULT_OUTDOOR_HYST,
     DEFAULT_SENSOR_TIMEOUT,
@@ -166,6 +169,7 @@ class TrvThermostatConfigFlow(ConfigFlow, domain=DOMAIN):
                     CONF_OFFSETS: user_input[CONF_OFFSETS],
                     CONF_WINDOWS: user_input.get(CONF_WINDOWS, []),
                     CONF_OUTDOOR_SENSOR: user_input.get(CONF_OUTDOOR_SENSOR),
+                    CONF_COVERS: user_input.get(CONF_COVERS, []),
                 }
                 return self.async_create_entry(title=self._data[CONF_NAME], data=data)
 
@@ -175,6 +179,7 @@ class TrvThermostatConfigFlow(ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_OFFSETS, default=detected): _multi("number"),
                 vol.Optional(CONF_WINDOWS, default=[]): _multi("binary_sensor"),
                 vol.Optional(CONF_OUTDOOR_SENSOR): _outdoor_selector(),
+                vol.Optional(CONF_COVERS, default=[]): _multi("cover"),
             }
         )
         return self.async_show_form(
@@ -225,6 +230,11 @@ class TrvThermostatOptionsFlow(OptionsFlow):
                     CONF_OUTDOOR_HYST,
                     default=cfg.get(CONF_OUTDOOR_HYST, DEFAULT_OUTDOOR_HYST),
                 ): _num(0, 10, 0.1, "°C"),
+                vol.Optional(CONF_COVERS, default=cfg.get(CONF_COVERS, [])): _multi("cover"),
+                vol.Required(
+                    CONF_COVER_DAYLIGHT_ONLY,
+                    default=cfg.get(CONF_COVER_DAYLIGHT_ONLY, DEFAULT_COVER_DAYLIGHT_ONLY),
+                ): BooleanSelector(),
                 vol.Required(
                     CONF_WINDOW_OPEN_DELAY,
                     default=cfg.get(CONF_WINDOW_OPEN_DELAY, DEFAULT_WINDOW_OPEN_DELAY),

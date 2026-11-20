@@ -673,3 +673,117 @@ async def test_boost(hass: HomeAssistant, fake_devices, freezer) -> None:
     await settle(hass)
     await advance(hass, freezer, 5 * 60 + 30, step=30)
     assert hass.states.get("sensor.salon_status").state == "idle"
+
+
+COVER = "cover.zaslona_salon"
+
+
+async def test_curtains(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """Open on big deficit while heating, close when done; manual moves win."""
+    cover = fake_devices["cover"]
+    freezer.move_to("2026-11-09 11:00:00+00:00")  # day, target 21
+    await set_temp(hass, 20.5)  # deficit 0.5 -> heating, but below 1.0
+    entry = await setup_room(hass, covers=[COVER])
+    ctrl = entry.runtime_data
+    assert hass.states.get("sensor.salon_status").state == "heating"
+    assert cover.calls == []
+    switch = our_entity(hass, entry, "switch", "covers")
+    deficit = our_entity(hass, entry, "number", "cover_deficit")
+    assert float(hass.states.get(deficit).state) == 1.0
+
+    # deficit grows during the same heating -> open
+    await set_temp(hass, 19.9)
+    await settle(hass)
+    assert cover.calls == ["open"] and cover.current_cover_position == 100
+    assert hass.states.get("climate.salon").attributes["covers_opened"] == [COVER]
+    await advance(hass, freezer, 600)
+    assert cover.calls == ["open"]  # no repeats
+
+    # deficit shrinks but still heating -> stays open; heating ends -> close
+    await set_temp(hass, 20.6)
+    assert cover.calls == ["open"]
+    await set_temp(hass, 21.1)
+    await advance(hass, freezer, 300)
+    assert hass.states.get("sensor.salon_status").state == "idle"
+    assert cover.calls == ["open", "close"]
+    assert ctrl.covers_owned == set()
+
+    # next cycle: opened, then closed by hand -> not reopened, not touched at the end
+    await set_temp(hass, 19.8)
+    await advance(hass, freezer, 300)
+    assert cover.calls[-1] == "open"
+    await advance(hass, freezer, 300)
+    cover.move(0)
+    await settle(hass)
+    await advance(hass, freezer, 600)
+    await set_temp(hass, 19.5)
+    assert cover.calls == ["open", "close", "open"]
+    await set_temp(hass, 21.2)
+    await advance(hass, freezer, 300)
+    assert hass.states.get("sensor.salon_status").state == "idle"
+    assert cover.calls == ["open", "close", "open"]
+
+    # curtain already open before heating -> never closed by us
+    cover.move(100)
+    await set_temp(hass, 19.6)
+    await advance(hass, freezer, 300)
+    await set_temp(hass, 21.2)
+    await advance(hass, freezer, 300)
+    assert cover.calls == ["open", "close", "open"] and cover.current_cover_position == 100
+
+    # window open -> curtains left alone
+    cover.move(0)
+    await set_temp(hass, 19.6)
+    await advance(hass, freezer, 300)
+    assert cover.calls[-1] == "open"
+    n = len(cover.calls)
+    hass.states.async_set("binary_sensor.salon_okno", "on")
+    await settle(hass)
+    await advance(hass, freezer, 120)
+    assert hass.states.get("sensor.salon_status").state == "window_open"
+    assert len(cover.calls) == n
+    hass.states.async_set("binary_sensor.salon_okno", "off")
+    await settle(hass)
+    await advance(hass, freezer, 180)
+
+    # sunset while heating -> close what we opened, nothing opens at night
+    hass.states.async_set("sun.sun", "below_horizon")
+    await settle(hass)
+    assert cover.calls[-1] == "close" and len(cover.calls) == n + 1
+    await set_temp(hass, 19.0)
+    await advance(hass, freezer, 600)
+    assert len(cover.calls) == n + 1
+
+    # sunrise during heating -> new episode, open again; switch off -> close
+    hass.states.async_set("sun.sun", "above_horizon")
+    await settle(hass)
+    assert cover.calls[-1] == "open"
+    await hass.services.async_call("switch", "turn_off", {"entity_id": switch}, blocking=True)
+    await settle(hass)
+    assert cover.calls[-1] == "close"
+    await advance(hass, freezer, 600)
+    assert cover.calls[-1] == "close"
+
+    # ownership survives a reload
+    await hass.services.async_call("switch", "turn_on", {"entity_id": switch}, blocking=True)
+    await settle(hass)
+    assert cover.calls[-1] == "open"
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await settle(hass)
+    assert entry.runtime_data.covers_owned == {COVER}
+    await set_temp(hass, 21.3)
+    await advance(hass, freezer, 300)
+    assert cover.calls[-1] == "close"
+
+
+async def test_curtain_entities_only_with_covers(hass: HomeAssistant, fake_devices) -> None:
+    """No covers configured -> no curtain switch/number; removing covers cleans up."""
+    entry = await setup_room(hass, covers=[COVER])
+    reg = er.async_get(hass)
+    sw = reg.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_covers")
+    num = reg.async_get_entity_id("number", DOMAIN, f"{entry.entry_id}_cover_deficit")
+    assert sw and num
+    hass.config_entries.async_update_entry(entry, options={"covers": []})
+    await settle(hass)
+    assert reg.async_get(sw) is None and reg.async_get(num) is None
+    assert reg.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_away")

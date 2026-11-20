@@ -19,10 +19,12 @@
         "data": {
           "offset_entities": "Encje offsetu / kalibracji",
           "window_sensors": "Czujniki okna (opcjonalnie)",
-          "outdoor_sensor": "Temperatura zewnętrzna (opcjonalnie)"
+          "outdoor_sensor": "Temperatura zewnętrzna (opcjonalnie)",
+          "covers": "Zasłony / rolety przed grzejnikami (opcjonalnie)"
         },
         "data_description": {
-          "outdoor_sensor": "Czujnik temperatury albo encja pogody. Grzanie wyłącza się, gdy temperatura jest równa progowi lub wyższa (encja number, domyślnie 15 °C)."
+          "outdoor_sensor": "Czujnik temperatury albo encja pogody. Grzanie wyłącza się, gdy temperatura jest równa progowi lub wyższa (encja number, domyślnie 15 °C).",
+          "covers": "Całkiem zasunięte zasłony są odsłaniane, gdy pokój grzeje i brakuje co najmniej ustawionej wartości, a po zakończeniu grzania zasuwane - tylko te, które odsłoniła integracja."
         }
       }
     },
@@ -44,6 +46,8 @@
           "window_sensors": "Czujniki okna",
           "outdoor_sensor": "Temperatura zewnętrzna (opcjonalnie)",
           "outdoor_hysteresis": "Histereza progu zewnętrznego",
+          "covers": "Zasłony / rolety przed grzejnikami (opcjonalnie)",
+          "cover_daylight_only": "Zasłony: tylko za dnia",
           "window_open_delay": "Opóźnienie otwarcia okna",
           "window_close_delay": "Opóźnienie zamknięcia okna",
           "sensor_timeout": "Timeout czujnika pokojowego",
@@ -54,7 +58,9 @@
           "sensor_timeout": "Brak raportu z czujnika przez ten czas = utrata czujnika, głowice regulują same z offsetem awaryjnym.",
           "adopt_trv_setpoint": "Kręcenie pokrętłem głowicy ustawia nadpisanie do najbliższej zmiany dzień/noc. Wyłączone = integracja przywraca swoją wartość.",
           "outdoor_sensor": "Czujnik temperatury albo encja pogody. Grzanie wyłącza się, gdy temperatura jest równa progowi lub wyższa (encja number, domyślnie 15 °C).",
-          "outdoor_hysteresis": "Grzanie wraca dopiero, gdy temperatura zewnętrzna spadnie do progu minus ta wartość."
+          "outdoor_hysteresis": "Grzanie wraca dopiero, gdy temperatura zewnętrzna spadnie do progu minus ta wartość.",
+          "covers": "Całkiem zasunięte zasłony są odsłaniane, gdy pokój grzeje i brakuje co najmniej ustawionej wartości, a po zakończeniu grzania zasuwane - tylko te, które odsłoniła integracja.",
+          "cover_daylight_only": "Odsłania tylko, gdy słońce jest nad horyzontem (sun.sun); o zachodzie zasuwa zasłony odsłonięte przez integrację."
         }
       }
     },
@@ -97,6 +103,9 @@
       "boost_duration": {
         "name": "Czas boostu"
       },
+      "cover_deficit": {
+        "name": "Odsłoń zasłony przy niedogrzaniu"
+      },
       "outdoor_cutoff": {
         "name": "Wyłącz grzanie przy temperaturze zewnętrznej"
       },
@@ -137,6 +146,9 @@
     "switch": {
       "away": {
         "name": "Poza domem"
+      },
+      "covers": {
+        "name": "Sterowanie zasłonami"
       }
     },
     "time": {

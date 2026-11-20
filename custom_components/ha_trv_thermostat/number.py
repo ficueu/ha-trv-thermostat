@@ -16,6 +16,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import (
     S_AWAY_TEMP,
     S_BOOST_DURATION,
+    S_COVER_DEFICIT,
     S_DAY_TEMP,
     S_HYST_OFF,
     S_HYST_ON,
@@ -100,6 +101,16 @@ NUMBERS: tuple[NumberEntityDescription, ...] = (
 
 # Only created when an outdoor sensor is configured.
 OUTDOOR_CUTOFF = _temp(S_OUTDOOR_CUTOFF, -10, 30, 0.5)
+# Only created when curtains are configured.
+COVER_DEFICIT = NumberEntityDescription(
+    key=S_COVER_DEFICIT,
+    translation_key=S_COVER_DEFICIT,
+    native_min_value=0.1,
+    native_max_value=5,
+    native_step=0.1,
+    native_unit_of_measurement=C,
+    mode=NumberMode.BOX,
+)
 
 
 async def async_setup_entry(
@@ -110,6 +121,8 @@ async def async_setup_entry(
     descriptions = list(NUMBERS)
     if ctrl.outdoor_sensor:
         descriptions.append(OUTDOOR_CUTOFF)
+    if ctrl.covers:
+        descriptions.append(COVER_DEFICIT)
     entities: list[NumberEntity] = [TrvThermostatNumber(ctrl, desc) for desc in descriptions]
     entities.extend(
         TrvLevelOffsetNumber(ctrl, eid, level) for eid in ctrl.offset_entities for level in LEVELS

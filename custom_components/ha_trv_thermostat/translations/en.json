@@ -19,10 +19,12 @@
         "data": {
           "offset_entities": "Offset / calibration entities",
           "window_sensors": "Window sensors (optional)",
-          "outdoor_sensor": "Outdoor temperature (optional)"
+          "outdoor_sensor": "Outdoor temperature (optional)",
+          "covers": "Curtains / covers in front of the radiators (optional)"
         },
         "data_description": {
-          "outdoor_sensor": "Temperature sensor or weather entity. Heating stops when it is at or above the cutoff (number entity, default 15 °C)."
+          "outdoor_sensor": "Temperature sensor or weather entity. Heating stops when it is at or above the cutoff (number entity, default 15 °C).",
+          "covers": "Fully closed curtains are opened when the room is heating with a deficit of at least the configured value, and closed again when heating ends - only those the integration opened."
         }
       }
     },
@@ -44,6 +46,8 @@
           "window_sensors": "Window sensors",
           "outdoor_sensor": "Outdoor temperature (optional)",
           "outdoor_hysteresis": "Outdoor cutoff hysteresis",
+          "covers": "Curtains / covers in front of the radiators (optional)",
+          "cover_daylight_only": "Curtains: daylight only",
           "window_open_delay": "Window open delay",
           "window_close_delay": "Window close delay",
           "sensor_timeout": "Room sensor timeout",
@@ -54,7 +58,9 @@
           "sensor_timeout": "No report from the room sensor for this long = sensor lost, TRVs regulate on their own with the fallback offset.",
           "adopt_trv_setpoint": "Turning the TRV knob sets a temporary override until the next day/night switch. Off = the integration reverts it.",
           "outdoor_sensor": "Temperature sensor or weather entity. Heating stops when it is at or above the cutoff (number entity, default 15 °C).",
-          "outdoor_hysteresis": "Heating is allowed again only when the outdoor temperature drops to cutoff minus this value."
+          "outdoor_hysteresis": "Heating is allowed again only when the outdoor temperature drops to cutoff minus this value.",
+          "covers": "Fully closed curtains are opened when the room is heating with a deficit of at least the configured value, and closed again when heating ends - only those the integration opened.",
+          "cover_daylight_only": "Open only while the sun is above the horizon (sun.sun); at sunset curtains opened by the integration are closed."
         }
       }
     },
@@ -97,6 +103,9 @@
       "boost_duration": {
         "name": "Boost duration"
       },
+      "cover_deficit": {
+        "name": "Open curtains at deficit"
+      },
       "outdoor_cutoff": {
         "name": "Heating off at outdoor temperature"
       },
@@ -137,6 +146,9 @@
     "switch": {
       "away": {
         "name": "Away"
+      },
+      "covers": {
+        "name": "Curtain control"
       }
     },
     "time": {

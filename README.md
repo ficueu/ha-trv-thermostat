@@ -34,6 +34,7 @@ Sytuacje szczególne:
 | Termostat pokoju `off` | jak wyżej, offset bez zmian |
 | Temperatura zewnętrzna ≥ próg (domyślnie 15 °C) | jak wyżej (status „ciepło na zewnątrz”); grzanie wraca dopiero przy próg − histereza (domyślnie 1 °C, czyli 14 °C) |
 | **Boost** | głowice dostają swój maksymalny setpoint (`max_temp`), więc zawór otwiera się na pełno na „Czas boostu” (domyślnie 15 min). Boost pomija harmonogram, histerezę, poza domem, próg zewnętrzny i wyłączony termostat; wygrywa z nim tylko otwarte okno. Offsetów nie zmienia, więc to 2 zapisy na głowicę |
+| Pokój grzeje i brakuje ≥ próg zasłon (domyślnie 1,0 °C) | odsłania całkiem zasunięte zasłony przed grzejnikami, po zakończeniu grzania zasuwa te, które sama odsłoniła (szczegóły niżej) |
 | **Poza domem** włączone | zadana = temperatura poza domem (domyślnie 20 °C), niezależnie od harmonogramu, presetu i nadpisań; pokrętło głowicy jest cofane |
 | Czujnik `unavailable` < 10 min | ignorowane, zostaje ostatnia wartość |
 | Czujnik zgubiony (unavailable ≥ 10 min albo brak raportu przez `sensor_timeout`, domyślnie 120 min) | offset awaryjny (0) → głowica reguluje sama |
@@ -68,7 +69,7 @@ Skopiuj katalog `custom_components/ha_trv_thermostat` do `/config/custom_compone
    - nazwa, czujnik temperatury, głowice (może być kilka),
    - encje offsetu: wykrywane automatycznie na urządzeniu głowicy (`local_temperature_calibration` w Z2M, `local_temperature_offset` w ZHA); sprawdź, czy wybrały się właściwe,
    - opcjonalnie czujniki okna.
-2. Opcje zaawansowane (czujnik zewnętrzny i jego histereza, opóźnienia okna, timeout czujnika, offset awaryjny, przejmowanie zmian z głowicy): **Konfiguruj** przy wpisie.
+2. Opcje zaawansowane (czujnik zewnętrzny i jego histereza, zasłony, opóźnienia okna, timeout czujnika, offset awaryjny, przejmowanie zmian z głowicy): **Konfiguruj** przy wpisie.
 
 Wymagany HA ≥ 2024.11 (testowane na 2026.2).
 
@@ -82,6 +83,8 @@ Wymagany HA ≥ 2024.11 (testowane na 2026.2).
 | `switch.<pokój>_poza_domem` | tryb poza domem |
 | `number.<pokój>_temperatura_poza_domem` | zadana w trybie poza domem (domyślnie 20 °C) |
 | `number.<pokój>_wylacz_grzanie_przy_temperaturze_zewnetrznej` | próg wyłączenia grzania (domyślnie 15 °C); tylko gdy wybrano czujnik zewnętrzny |
+| `switch.<pokój>_sterowanie_zaslonami` | włącza sterowanie zasłonami (wyłączenie zasuwa to, co integracja odsłoniła); tylko gdy wybrano zasłony |
+| `number.<pokój>_odslon_zaslony_przy_niedogrzaniu` | próg niedogrzania do odsłonięcia (domyślnie 1,0 °C); tylko gdy wybrano zasłony |
 | `button.<pokój>_boost` / `_zakoncz_boost` | start (ponowne naciśnięcie liczy czas od nowa) / przerwanie boostu |
 | `number.<pokój>_czas_boostu` | czas boostu (domyślnie 15 min) |
 | `number.<pokój>_<głowica>_offset_spoczynek_poziom_0` … `_offset_poziom_3` | offsety tej głowicy dla poziomów 0–3 (kategoria konfiguracja); zakres i krok jak w encji kalibracji głowicy |
@@ -95,7 +98,7 @@ Zmiana temperatury na karcie termostatu:
 - w presecie **Dzień** / **Noc** zmienia na stałe temperaturę dzienną / nocną,
 - przy włączonym **Poza domem** zmienia temperaturę poza domem.
 
-Atrybuty `climate` do debugowania: `status`, `level`, `deficit`, `trend` (°C/h), `reason`, `target_source` (`day`/`night`/`comfort`/`eco`/`override`/`away`), `override_until`, `last_level_change`, `away`, `boost_until`, `outdoor_temperature`, `outdoor_warm`, `offsets` (zadany offset każdej głowicy). Atrybuty `deficit`, `trend` i `reason` nie trafiają do recordera.
+Atrybuty `climate` do debugowania: `status`, `level`, `deficit`, `trend` (°C/h), `reason`, `target_source` (`day`/`night`/`comfort`/`eco`/`override`/`away`), `override_until`, `last_level_change`, `away`, `boost_until`, `outdoor_temperature`, `outdoor_warm`, `covers_opened`, `offsets` (zadany offset każdej głowicy). Atrybuty `deficit`, `trend` i `reason` nie trafiają do recordera.
 
 ### Aktualizacja z wcześniejszych wersji
 
@@ -108,6 +111,17 @@ Przełącznik jest w każdym pomieszczeniu osobno. Żeby mieć jeden dla całego
 ### Temperatura zewnętrzna
 
 Czujnik wybierasz przy dodawaniu pomieszczenia albo w **Konfiguruj**. Może to być czujnik temperatury albo encja pogody (`weather.*`, brany jest jej atrybut `temperature`). Bez czujnika funkcja jest wyłączona i encja progu nie powstaje. Gdy czujnik jest niedostępny, zostaje ostatni stan, więc chwilowy brak odczytu nie przełącza głowic.
+
+### Zasłony
+
+Zasłona przed grzejnikiem zatrzymuje ciepło między grzejnikiem a oknem, więc przy dużym niedogrzaniu warto ją odsłonić. Zasłony (encje `cover`) wybierasz przy dodawaniu pomieszczenia albo w **Konfiguruj**.
+
+- **Odsłanianie:** gdy pokój grzeje i niedogrzanie ≥ próg, integracja odsłania zasłony, które są **całkiem zasunięte**. Te już odsłonięte zostawia i potem ich nie zasuwa.
+- **Zasuwanie:** gdy grzanie się kończy (bezczynny, wyłączony, ciepło na zewnątrz), integracja zasuwa tylko zasłony, które sama odsłoniła.
+- **Ręczna zmiana wygrywa:** jeśli ktoś zasunie albo przesunie zasłonę (pozycja < 90), integracja odpuszcza i do końca tego cyklu grzania jej nie rusza.
+- **Tylko za dnia** (domyślnie): odsłania tylko przy słońcu nad horyzontem (`sun.sun`, bez niego według harmonogramu dzień/noc). O zachodzie zasuwa to, co sama odsłoniła, bo w nocy zasłona izoluje okno i daje prywatność.
+- **Bez reakcji:** przy otwartym oknie, boostcie i utracie czujnika zasłony zostają, jak są.
+- Zasłony odsłonięte przez integrację są pamiętane po restarcie HA (atrybut `covers_opened`).
 
 ## Wskazówki
 

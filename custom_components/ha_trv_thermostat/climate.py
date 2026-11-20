@@ -102,6 +102,7 @@ class TrvThermostatClimate(TrvThermostatEntity, ClimateEntity):
             "window_open": c.window_open,
             "away": c.away,
             "boost_until": c.boost_until.isoformat() if c.boost_until else None,
+            "covers_opened": sorted(c.covers_owned),
             "outdoor_temperature": c.outdoor_temp,
             "outdoor_warm": c.outdoor_warm,
             "last_level_change": c.last_level_change.isoformat() if c.last_level_change else None,
