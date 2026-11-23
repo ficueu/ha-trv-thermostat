@@ -48,7 +48,7 @@ class TrvThermostatClimate(TrvThermostatEntity, ClimateEntity):
     )
     _attr_min_temp = TEMP_MIN
     _attr_max_temp = TEMP_MAX
-    _attr_target_temperature_step = 0.1
+    _attr_target_temperature_step = 0.5
     _unrecorded_attributes = frozenset({"reason", "trend", "deficit"})
 
     def __init__(self, ctrl: RoomController) -> None:

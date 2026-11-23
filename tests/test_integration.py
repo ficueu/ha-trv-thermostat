@@ -828,3 +828,11 @@ async def test_away_as_preset(hass: HomeAssistant, fake_devices, freezer) -> Non
     assert hass.states.get(away).state == "off"
     assert hass.states.get("climate.salon").attributes["preset_mode"] == "eco"
     assert trv1.target_temperature == 19.0
+
+
+async def test_temperature_step(hass: HomeAssistant, fake_devices) -> None:
+    """Card and target temperature entities move in 0.5 degC steps."""
+    entry = await setup_room(hass)
+    assert hass.states.get("climate.salon").attributes["target_temp_step"] == 0.5
+    for key in ("day_temp", "night_temp", "away_temp"):
+        assert hass.states.get(our_entity(hass, entry, "number", key)).attributes["step"] == 0.5

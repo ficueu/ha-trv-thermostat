@@ -35,7 +35,7 @@ C = UnitOfTemperature.CELSIUS
 
 
 def _temp(
-    key: str, vmin: float = 5, vmax: float = 30, step: float = 0.1
+    key: str, vmin: float = 5, vmax: float = 30, step: float = 0.5
 ) -> NumberEntityDescription:
     return NumberEntityDescription(
         key=key,
