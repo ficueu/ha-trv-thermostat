@@ -1,3 +1,5 @@
+<img src="custom_components/ha_trv_thermostat/brand/icon.png" alt="" width="96" align="right">
+
 # HA TRV Thermostat
 
 Integracja Home Assistant do sterowania głowicami Zigbee (TRV) na podstawie **zewnętrznego czujnika temperatury w pomieszczeniu**. Działa jak Better Thermostat, ale:
@@ -71,7 +73,7 @@ Skopiuj katalog `custom_components/ha_trv_thermostat` do `/config/custom_compone
    - opcjonalnie czujniki okna.
 2. Opcje zaawansowane (czujnik zewnętrzny i jego histereza, zasłony, opóźnienia okna, timeout czujnika, offset awaryjny, przejmowanie zmian z głowicy): **Konfiguruj** przy wpisie.
 
-Wymagany HA ≥ 2024.11 (testowane na 2026.2).
+Wymagany HA ≥ 2024.11 (testowane na 2026.2). Ikona i logo integracji (katalog `brand/`) wyświetlają się od HA 2026.3; na starszych wersjach w ich miejscu jest zastępczy obrazek, a reszta działa bez zmian. Źródło ikony to `assets/icon.svg`, a PNG generuje `assets/build_brand.py`.
 
 ## Encje (na każde pomieszczenie)
 

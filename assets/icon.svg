@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="fin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FF9A3C"/>
+      <stop offset="1" stop-color="#E8452C"/>
+    </linearGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#E8662F"/>
+      <stop offset="1" stop-color="#D9452B"/>
+    </linearGradient>
+    <linearGradient id="trv" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#27B5C9"/>
+      <stop offset="1" stop-color="#1689A6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- heat waves -->
+  <g fill="none" stroke="#FF8A3D" stroke-width="20" stroke-linecap="round" opacity="0.9">
+    <path d="M92 150 q-22 -26 0 -52 q22 -26 0 -52"/>
+    <path d="M178 150 q-22 -26 0 -52 q22 -26 0 -52"/>
+    <path d="M264 150 q-22 -26 0 -52 q22 -26 0 -52"/>
+  </g>
+
+  <!-- radiator: manifolds -->
+  <rect x="60" y="214" width="214" height="30" rx="15" fill="url(#bar)"/>
+  <rect x="60" y="414" width="214" height="30" rx="15" fill="url(#bar)"/>
+  <!-- radiator: columns -->
+  <g fill="url(#fin)">
+    <rect x="52"  y="176" width="62" height="300" rx="31"/>
+    <rect x="136" y="176" width="62" height="300" rx="31"/>
+    <rect x="220" y="176" width="62" height="300" rx="31"/>
+  </g>
+  <!-- column highlights -->
+  <g fill="#FFFFFF" opacity="0.28">
+    <rect x="66"  y="200" width="12" height="252" rx="6"/>
+    <rect x="150" y="200" width="12" height="252" rx="6"/>
+    <rect x="234" y="200" width="12" height="252" rx="6"/>
+  </g>
+
+  <!-- valve body + pipe to the TRV head -->
+  <rect x="282" y="214" width="96" height="30" rx="15" fill="url(#bar)"/>
+  <rect x="356" y="200" width="30" height="58" rx="8" fill="#B9C4CC"/>
+
+  <!-- TRV head -->
+  <rect x="380" y="128" width="96" height="202" rx="40" fill="url(#trv)"/>
+  <g stroke="#FFFFFF" stroke-width="8" stroke-linecap="round" opacity="0.35">
+    <line x1="398" y1="268" x2="458" y2="268"/>
+    <line x1="398" y1="292" x2="458" y2="292"/>
+  </g>
+  <!-- display -->
+  <rect x="396" y="156" width="64" height="86" rx="16" fill="#E9FBFF"/>
+  <!-- up/down offset arrows on the display -->
+  <path d="M428 168 l16 20 h-32 z" fill="#E8452C"/>
+  <path d="M428 230 l16 -20 h-32 z" fill="#1689A6"/>
+</svg>
