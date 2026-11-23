@@ -787,3 +787,44 @@ async def test_curtain_entities_only_with_covers(hass: HomeAssistant, fake_devic
     await settle(hass)
     assert reg.async_get(sw) is None and reg.async_get(num) is None
     assert reg.async_get_entity_id("switch", DOMAIN, f"{entry.entry_id}_away")
+
+
+async def test_away_as_preset(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """'away' preset on the thermostat == away switch; the preset underneath is kept."""
+    trv1 = fake_devices["trv1"]
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 20.5)
+    entry = await setup_room(hass)
+    away = our_entity(hass, entry, "switch", "away")
+    state = hass.states.get("climate.salon")
+    assert state.attributes["preset_modes"] == ["schedule", "comfort", "eco", "away"]
+
+    async def preset(mode: str) -> None:
+        await hass.services.async_call(
+            "climate",
+            "set_preset_mode",
+            {"entity_id": "climate.salon", "preset_mode": mode},
+            blocking=True,
+        )
+        await settle(hass)
+
+    await preset("comfort")
+    await preset("away")
+    assert hass.states.get("climate.salon").attributes["preset_mode"] == "away"
+    assert hass.states.get(away).state == "on"
+    assert trv1.target_temperature == 20.0
+
+    # switch off -> back to the preset that was active before (comfort)
+    await hass.services.async_call("switch", "turn_off", {"entity_id": away}, blocking=True)
+    await settle(hass)
+    assert hass.states.get("climate.salon").attributes["preset_mode"] == "comfort"
+    assert trv1.target_temperature == 21.0
+
+    # switch on -> shown as preset; picking another preset ends away
+    await hass.services.async_call("switch", "turn_on", {"entity_id": away}, blocking=True)
+    await settle(hass)
+    assert hass.states.get("climate.salon").attributes["preset_mode"] == "away"
+    await preset("eco")
+    assert hass.states.get(away).state == "off"
+    assert hass.states.get("climate.salon").attributes["preset_mode"] == "eco"
+    assert trv1.target_temperature == 19.0

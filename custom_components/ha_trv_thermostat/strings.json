@@ -84,7 +84,8 @@
             "state": {
               "schedule": "Schedule",
               "comfort": "Day",
-              "eco": "Night"
+              "eco": "Night",
+              "away": "Away"
             }
           }
         }

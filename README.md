@@ -35,7 +35,7 @@ Sytuacje szczególne:
 | Temperatura zewnętrzna ≥ próg (domyślnie 15 °C) | jak wyżej (status „ciepło na zewnątrz”); grzanie wraca dopiero przy próg − histereza (domyślnie 1 °C, czyli 14 °C) |
 | **Boost** | głowice dostają swój maksymalny setpoint (`max_temp`), więc zawór otwiera się na pełno na „Czas boostu” (domyślnie 15 min). Boost pomija harmonogram, histerezę, poza domem, próg zewnętrzny i wyłączony termostat; wygrywa z nim tylko otwarte okno. Offsetów nie zmienia, więc to 2 zapisy na głowicę |
 | Pokój grzeje i brakuje ≥ próg zasłon (domyślnie 1,0 °C) | odsłania całkiem zasunięte zasłony przed grzejnikami, po zakończeniu grzania zasuwa te, które sama odsłoniła (szczegóły niżej) |
-| **Poza domem** włączone | zadana = temperatura poza domem (domyślnie 20 °C), niezależnie od harmonogramu, presetu i nadpisań; pokrętło głowicy jest cofane |
+| **Poza domem** (preset termostatu albo przełącznik) | zadana = temperatura poza domem (domyślnie 20 °C), niezależnie od harmonogramu i nadpisań; pokrętło głowicy jest cofane. Wyłączenie wraca do presetu, który był aktywny wcześniej |
 | Czujnik `unavailable` < 10 min | ignorowane, zostaje ostatnia wartość |
 | Czujnik zgubiony (unavailable ≥ 10 min albo brak raportu przez `sensor_timeout`, domyślnie 120 min) | offset awaryjny (0) → głowica reguluje sama |
 | Restart HA, czujnik jeszcze nie zaraportował | przez 10 min nic nie jest zapisywane |
@@ -77,10 +77,10 @@ Wymagany HA ≥ 2024.11 (testowane na 2026.2).
 
 | Encja | Opis |
 |---|---|
-| `climate.<pokój>` | termostat; presety: **Harmonogram** (dzień/noc wg godzin), **Dzień**, **Noc** |
+| `climate.<pokój>` | termostat; presety: **Harmonogram** (dzień/noc wg godzin), **Dzień**, **Noc**, **Poza domem** |
 | `number.<pokój>_temperatura_dzien` / `_noc` | temperatury zadane |
 | `time.<pokój>_poczatek_dnia` / `_nocy` | granice harmonogramu |
-| `switch.<pokój>_poza_domem` | tryb poza domem |
+| `switch.<pokój>_poza_domem` | tryb poza domem, to samo co preset **Poza domem** (przydatny do grupy przełączników) |
 | `number.<pokój>_temperatura_poza_domem` | zadana w trybie poza domem (domyślnie 20 °C) |
 | `number.<pokój>_wylacz_grzanie_przy_temperaturze_zewnetrznej` | próg wyłączenia grzania (domyślnie 15 °C); tylko gdy wybrano czujnik zewnętrzny |
 | `switch.<pokój>_sterowanie_zaslonami` | włącza sterowanie zasłonami (wyłączenie zasuwa to, co integracja odsłoniła); tylko gdy wybrano zasłony |
@@ -106,7 +106,7 @@ Wspólne offsety pokoju z wersji 1.0 zostają skopiowane do każdej głowicy, a 
 
 ### Poza domem dla całego mieszkania
 
-Przełącznik jest w każdym pomieszczeniu osobno. Żeby mieć jeden dla całego mieszkania, dodaj pomocnika **Ustawienia → Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Grupa → Grupa przełączników** i dodaj do niej wszystkie `switch.*_poza_domem`. Przełączenie grupy przełącza wszystkie pokoje.
+Tryb poza domem włączasz w termostacie pokoju (preset **Poza domem**, obok Harmonogram/Dzień/Noc) albo przełącznikiem `switch.<pokój>_poza_domem`, oba są zsynchronizowane. Na karcie termostatu presety pokazuje funkcja karty „Tryby ustawień” (*Preset modes*). Tryby grzanie/wyłączony to w HA zamknięta lista `hvac_modes`, więc nie da się do niej dopisać własnego trybu, a preset jest właściwym miejscem. Żeby mieć jeden przełącznik dla całego mieszkania, dodaj pomocnika **Ustawienia → Urządzenia i usługi → Pomocnicy → Utwórz pomocnika → Grupa → Grupa przełączników** i dodaj do niej wszystkie `switch.*_poza_domem`. Przełączenie grupy przełącza wszystkie pokoje.
 
 ### Temperatura zewnętrzna
 

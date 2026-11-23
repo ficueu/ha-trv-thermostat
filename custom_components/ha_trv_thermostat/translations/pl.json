@@ -84,7 +84,8 @@
             "state": {
               "schedule": "Harmonogram",
               "comfort": "Dzień",
-              "eco": "Noc"
+              "eco": "Noc",
+              "away": "Poza domem"
             }
           }
         }

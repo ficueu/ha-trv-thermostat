@@ -28,6 +28,7 @@ from homeassistant.components.climate import (
     ATTR_MAX_TEMP,
     ATTR_TARGET_TEMP_STEP,
     DOMAIN as CLIMATE_DOMAIN,
+    PRESET_AWAY,
     PRESET_COMFORT,
     PRESET_ECO,
     SERVICE_SET_HVAC_MODE,
@@ -617,7 +618,15 @@ class RoomController:
 
     @callback
     def async_set_preset(self, preset: str) -> None:
-        """Change preset; clears any override."""
+        """Change preset; clears any override.
+
+        "away" is the away mode (same as the switch); the schedule/day/night
+        preset underneath is kept and comes back when away is turned off.
+        """
+        if preset == PRESET_AWAY:
+            self.async_set_away(True)
+            return
+        self.away = False
         self.preset = preset
         self.override_temp = None
         self.override_until = None
