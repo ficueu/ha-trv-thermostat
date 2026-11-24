@@ -949,3 +949,54 @@ async def test_problem_sensor(hass: HomeAssistant, fake_devices, freezer) -> Non
     assert hass.states.get(problem).attributes["problems"] == [
         "room_sensor_lost: sensor.salon_temp"
     ]
+
+
+async def test_battery_low_indicators(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """Binary battery_low (with or without device class) is recognised, like %."""
+    src = MockConfigEntry(domain="test")
+    src.add_to_hass(hass)
+    reg = er.async_get(hass)
+    devs = {}
+    for trv in ("trv_1", "trv_2"):
+        devs[trv] = dr.async_get(hass).async_get_or_create(
+            config_entry_id=src.entry_id, identifiers={("test", trv)}, name=trv
+        )
+        reg.async_update_entity(f"climate.{trv}", device_id=devs[trv].id)
+    # Z2M style: binary_sensor.<trv>_battery_low with device_class battery
+    reg.async_get_or_create(
+        "binary_sensor",
+        "test",
+        "trv1_battery_low",
+        device_id=devs["trv_1"].id,
+        suggested_object_id="trv_1_battery_low",
+        original_device_class="battery",
+        config_entry=src,
+    )
+    # no device class, only the name says it
+    reg.async_get_or_create(
+        "binary_sensor",
+        "test",
+        "trv2_battery_low",
+        device_id=devs["trv_2"].id,
+        suggested_object_id="trv_2_battery_low",
+        config_entry=src,
+    )
+    hass.states.async_set("binary_sensor.trv_1_battery_low", "off")
+    hass.states.async_set("binary_sensor.trv_2_battery_low", "off")
+
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 21.5)
+    entry = await setup_room(hass)
+    problem = our_entity(hass, entry, "binary_sensor", "problem")
+    assert entry.runtime_data.battery_entities == [
+        "binary_sensor.trv_1_battery_low",
+        "binary_sensor.trv_2_battery_low",
+    ]
+    assert hass.states.get(problem).state == "off"
+    hass.states.async_set("binary_sensor.trv_1_battery_low", "on")
+    hass.states.async_set("binary_sensor.trv_2_battery_low", "on")
+    await advance(hass, freezer, 60)
+    assert hass.states.get(problem).attributes["problems"] == [
+        "battery_low: binary_sensor.trv_1_battery_low",
+        "battery_low: binary_sensor.trv_2_battery_low",
+    ]

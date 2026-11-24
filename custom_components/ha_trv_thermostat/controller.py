@@ -808,7 +808,13 @@ class RoomController:
             self.trv_names[eid] = name or eid
 
     def _find_batteries(self) -> list[str]:
-        """Battery entities (sensor %, binary_sensor low) on the TRVs' devices."""
+        """Battery entities on the TRVs' devices.
+
+        * sensor with device_class battery -> percentage
+        * binary_sensor with device_class battery -> on = low (Z2M ``battery_low``)
+        * anything named ``battery_low`` without a device class (some converters /
+          customized entities) -> on/true/low = low
+        """
         ent_reg = er.async_get(self.hass)
         devices = {
             entry.device_id
@@ -820,7 +826,23 @@ class RoomController:
             for entry in er.async_entries_for_device(ent_reg, device_id):
                 if entry.domain not in ("sensor", "binary_sensor"):
                     continue
-                if (entry.device_class or entry.original_device_class) == "battery":
+                hay = (
+                    " ".join(
+                        str(x)
+                        for x in (
+                            entry.entity_id,
+                            entry.unique_id,
+                            entry.translation_key,
+                            entry.original_name,
+                        )
+                        if x
+                    )
+                    .lower()
+                    .replace(" ", "_")
+                )
+                if (
+                    entry.device_class or entry.original_device_class
+                ) == "battery" or "battery_low" in hay:
                     found.append(entry.entity_id)
         return sorted(found)
 
@@ -862,10 +884,11 @@ class RoomController:
             state = self.hass.states.get(eid)
             if state is None or state.state in BAD_STATES:
                 continue
-            if eid.startswith("binary_sensor."):
-                if state.state == STATE_ON:
+            level = _float(state.state)
+            if level is None:  # low/ok indicator: on/off (true/false, low/normal)
+                if str(state.state).lower() in (STATE_ON, "true", "low"):
                     problems.append(f"battery_low: {eid}")
-            elif (level := _float(state.state)) is not None and level <= BATTERY_LOW_PCT:
+            elif not eid.startswith("binary_sensor.") and level <= BATTERY_LOW_PCT:
                 problems.append(f"battery_low: {eid} ({level:.0f}%)")
         return problems
 

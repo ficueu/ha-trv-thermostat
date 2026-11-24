@@ -124,8 +124,11 @@ Czujnik wybierasz przy dodawaniu pomieszczenia albo w **Konfiguruj**. Może to b
 |---|---|
 | `not_confirming: <encja> <co>=<wartość>` | głowica nie potwierdziła zapisu po 3 próbach (np. słaby zasięg, rozładowana bateria) |
 | `unavailable: <encja>` | głowica albo jej encja offsetu jest niedostępna dłużej niż 15 min |
-| `battery_low: <encja> (<n>%)` | bateria głowicy ≤ 15% (encja baterii na urządzeniu głowicy, wykrywana automatycznie) |
+| `battery_low: <encja> (<n>%)` | bateria głowicy ≤ 15% (czujnik procentowy z `device_class: battery` na urządzeniu głowicy) |
+| `battery_low: <encja>` | wskaźnik niskiej baterii włączony (`on`/`true`/`low`): `binary_sensor` z `device_class: battery`, np. `battery_low` z Z2M, albo encja z `battery_low` w nazwie bez klasy urządzenia |
 | `room_sensor_lost: <encja>` | czujnik pokojowy zgubiony (głowice regulują same) |
+
+Encje baterii są wyszukiwane automatycznie na urządzeniach głowic przy starcie integracji; jeśli głowica ma oba typy, sprawdzane są oba.
 
 Zapotrzebowanie dla całego mieszkania zrobisz pomocnikiem **Połącz stan kilku czujników** (*Combine the state of several sensors*, typ *maksimum* albo *suma*) z czujników `*_zapotrzebowanie_na_cieplo`. Przyda się np. do sterowania kotłem albo pompą.
 
