@@ -11,6 +11,7 @@ from .const import DOMAIN, STORAGE_VERSION
 from .controller import RoomController
 
 PLATFORMS = [
+    Platform.BINARY_SENSOR,
     Platform.BUTTON,
     Platform.CLIMATE,
     Platform.NUMBER,

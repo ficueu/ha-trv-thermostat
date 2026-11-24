@@ -22,7 +22,12 @@ async def async_setup_entry(
 ) -> None:
     """Set up sensors."""
     ctrl: RoomController = entry.runtime_data
-    entities: list[SensorEntity] = [LevelSensor(ctrl), StatusSensor(ctrl), WritesSensor(ctrl)]
+    entities: list[SensorEntity] = [
+        LevelSensor(ctrl),
+        StatusSensor(ctrl),
+        HeatDemandSensor(ctrl),
+        WritesSensor(ctrl),
+    ]
     entities.extend(TrvOffsetSensor(ctrl, eid) for eid in ctrl.offset_entities)
     async_remove_orphans(hass, entry, "sensor", entities)
     async_add_entities(entities)
@@ -59,6 +64,28 @@ class StatusSensor(TrvThermostatEntity, SensorEntity):
     def native_value(self) -> str | None:
         """Status."""
         return self._ctrl.decision.status.value if self._ctrl.decision else None
+
+
+class HeatDemandSensor(TrvThermostatEntity, SensorEntity):
+    """How many degrees the room is below its target (0.1 resolution).
+
+    0 when the room is at/above target or heating is not allowed (off, window,
+    warm outside); unknown when the room sensor is lost.
+    """
+
+    _attr_translation_key = "heat_demand"
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, ctrl: RoomController) -> None:
+        """Init."""
+        super().__init__(ctrl, "heat_demand")
+
+    @property
+    def native_value(self) -> float | None:
+        """Deficit in degC."""
+        return self._ctrl.heat_demand
 
 
 class TrvOffsetSensor(TrvThermostatEntity, SensorEntity):

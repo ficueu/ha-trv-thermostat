@@ -28,6 +28,9 @@
       },
       "writes": {
         "default": "mdi:zigbee"
+      },
+      "heat_demand": {
+        "default": "mdi:thermometer-chevron-up"
       }
     },
     "switch": {

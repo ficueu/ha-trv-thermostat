@@ -836,3 +836,116 @@ async def test_temperature_step(hass: HomeAssistant, fake_devices) -> None:
     assert hass.states.get("climate.salon").attributes["target_temp_step"] == 0.5
     for key in ("day_temp", "night_temp", "away_temp"):
         assert hass.states.get(our_entity(hass, entry, "number", key)).attributes["step"] == 0.5
+
+
+async def test_heat_demand(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """Degrees below target, 0.1 resolution; 0 when heating is not allowed."""
+    freezer.move_to("2026-11-09 11:00:00+00:00")  # target 21
+    await set_temp(hass, 20.47)
+    entry = await setup_room(hass)
+    demand = our_entity(hass, entry, "sensor", "heat_demand")
+    st = hass.states.get(demand)
+    assert float(st.state) == 0.5
+    assert st.attributes["unit_of_measurement"] == "°C"
+    await set_temp(hass, 19.23)
+    assert float(hass.states.get(demand).state) == 1.8
+    await set_temp(hass, 21.4)
+    assert float(hass.states.get(demand).state) == 0.0
+    await set_temp(hass, 20.0)
+    hass.states.async_set("binary_sensor.salon_okno", "on")
+    await settle(hass)
+    await advance(hass, freezer, 90)
+    assert float(hass.states.get(demand).state) == 0.0  # window open
+    hass.states.async_set("binary_sensor.salon_okno", "off")
+    await settle(hass)
+    await advance(hass, freezer, 150)
+    assert float(hass.states.get(demand).state) == 1.0
+    await hass.services.async_call(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "off"},
+        blocking=True,
+    )
+    await settle(hass)
+    assert float(hass.states.get(demand).state) == 0.0
+    await hass.services.async_call(
+        "climate",
+        "set_hvac_mode",
+        {"entity_id": "climate.salon", "hvac_mode": "heat"},
+        blocking=True,
+    )
+    hass.states.async_set("sensor.salon_temp", "unavailable")
+    await settle(hass)
+    await advance(hass, freezer, 660)
+    assert hass.states.get(demand).state == "unknown"
+
+
+async def test_problem_sensor(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """Problem: TRV not confirming, TRV unavailable, battery low, sensor lost."""
+    off1 = fake_devices["off1"]
+    # battery entities on TRV 1's device
+    src = MockConfigEntry(domain="test")
+    src.add_to_hass(hass)
+    dev = dr.async_get(hass).async_get_or_create(
+        config_entry_id=src.entry_id, identifiers={("test", "trv1")}, name="TRV 1"
+    )
+    reg = er.async_get(hass)
+    reg.async_update_entity("climate.trv_1", device_id=dev.id)
+    reg.async_get_or_create(
+        "sensor",
+        "test",
+        "trv1_battery",
+        device_id=dev.id,
+        suggested_object_id="trv_1_battery",
+        original_device_class="battery",
+        config_entry=src,
+    )
+    hass.states.async_set("sensor.trv_1_battery", "80", {"device_class": "battery"})
+
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 21.5)
+    entry = await setup_room(hass)
+    problem = our_entity(hass, entry, "binary_sensor", "problem")
+    assert hass.states.get(problem).state == "off"
+    assert entry.runtime_data.battery_entities == ["sensor.trv_1_battery"]
+
+    # battery low
+    hass.states.async_set("sensor.trv_1_battery", "12", {"device_class": "battery"})
+    await advance(hass, freezer, 60)
+    st = hass.states.get(problem)
+    assert st.state == "on"
+    assert st.attributes["problems"] == ["battery_low: sensor.trv_1_battery (12%)"]
+    hass.states.async_set("sensor.trv_1_battery", "100", {"device_class": "battery"})
+    await advance(hass, freezer, 60)
+    assert hass.states.get(problem).state == "off"
+
+    # TRV 1 stops confirming -> problem after 3 attempts + verify time, clears on confirm
+    await advance(hass, freezer, 300)
+    off1.respond = False
+    await set_temp(hass, 20.4)  # start heating -> offset -2
+    await advance(hass, freezer, 240)
+    assert hass.states.get(problem).state == "off"  # still retrying
+    await advance(hass, freezer, 120)
+    st = hass.states.get(problem)
+    assert st.state == "on"
+    assert st.attributes["problems"] == ["not_confirming: number.trv_1_calibration offset=-2.0"]
+    off1.respond = True
+    await advance(hass, freezer, 1800, step=60)
+    assert hass.states.get(problem).state == "off"
+
+    # TRV unavailable for 15 min
+    hass.states.async_set("climate.trv_2", "unavailable")
+    await advance(hass, freezer, 840, step=60)
+    assert hass.states.get(problem).state == "off"
+    await advance(hass, freezer, 120, step=60)
+    assert hass.states.get(problem).attributes["problems"] == ["unavailable: climate.trv_2"]
+    fake_devices["trv2"].async_write_ha_state()
+    await advance(hass, freezer, 60)
+    assert hass.states.get(problem).state == "off"
+
+    # room sensor lost
+    hass.states.async_set("sensor.salon_temp", "unavailable")
+    await advance(hass, freezer, 660, step=60, heartbeat=False)
+    assert hass.states.get(problem).attributes["problems"] == [
+        "room_sensor_lost: sensor.salon_temp"
+    ]

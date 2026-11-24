@@ -88,6 +88,8 @@ BACKOFF_S: Final = 1800  # then retry at most every 30 min
 ADOPT_GUARD_S: Final = 180  # ignore TRV setpoint reports this long after our write
 COVER_GUARD_S: Final = 180  # cover moves within this time after our command are ours
 COVER_MANUAL_POSITION: Final = 90  # owned cover below this position = moved by hand
+UNAVAILABLE_GRACE_S: Final = 900  # TRV/offset entity unavailable this long = problem
+BATTERY_LOW_PCT: Final = 15  # TRV battery at or below = problem
 WRITE_SPACING_S: Final = 0.3  # gap between consecutive Zigbee writes
 SETPOINT_MIN_TOLERANCE: Final = 0.26  # TRV setpoint within +-0.25 is "good enough"
 TREND_WINDOW_S: Final = 1200

@@ -77,6 +77,7 @@ from homeassistant.util import dt as dt_util
 from .const import (
     ADOPT_GUARD_S,
     BACKOFF_S,
+    BATTERY_LOW_PCT,
     COVER_GUARD_S,
     COVER_MANUAL_POSITION,
     CONF_ADOPT_TRV_SETPOINT,
@@ -129,6 +130,7 @@ from .const import (
     TICK_INTERVAL_S,
     TREND_HISTORY_S,
     TREND_WINDOW_S,
+    UNAVAILABLE_GRACE_S,
     VERIFY_DELAY_S,
     WRITE_SPACING_S,
     parse_time,
@@ -255,6 +257,10 @@ class RoomController:
         self.trv_names: dict[str, str] = {}
         self._identify_trvs()
         self.trv_offsets: dict[str, dict[str, float]] = {}
+        self.battery_entities: list[str] = self._find_batteries()
+        self._bad_since: dict[str, float] = {}
+        self.problems: list[str] = []
+        self.heat_demand: float | None = None
 
         self._started = False
         self._started_at = 0.0
@@ -409,6 +415,8 @@ class RoomController:
             self.boost_until,
             tuple(sorted(self.covers_owned)),
             self.covers_enabled,
+            tuple(self.problems),
+            self.heat_demand,
             self.outdoor_temp,
             self.outdoor_warm,
         )
@@ -799,6 +807,68 @@ class RoomController:
                 name = state.name
             self.trv_names[eid] = name or eid
 
+    def _find_batteries(self) -> list[str]:
+        """Battery entities (sensor %, binary_sensor low) on the TRVs' devices."""
+        ent_reg = er.async_get(self.hass)
+        devices = {
+            entry.device_id
+            for eid in (*self.trvs, *self.offset_entities)
+            if (entry := ent_reg.async_get(eid)) and entry.device_id
+        }
+        found: list[str] = []
+        for device_id in devices:
+            for entry in er.async_entries_for_device(ent_reg, device_id):
+                if entry.domain not in ("sensor", "binary_sensor"):
+                    continue
+                if (entry.device_class or entry.original_device_class) == "battery":
+                    found.append(entry.entity_id)
+        return sorted(found)
+
+    # ------------------------------------------------------------------ #
+    # Heat demand / problems
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _compute_demand(decision: Decision, temp: float | None, target: float) -> float | None:
+        """Degrees missing to the target (>= 0), 0 when heating is not allowed."""
+        if decision.status in (Status.OFF, Status.WINDOW, Status.OUTDOOR):
+            return 0.0
+        if temp is None:
+            return None
+        return round(max(0.0, target - temp), 1)
+
+    def _compute_problems(self, decision: Decision, now: float) -> list[str]:
+        problems: list[str] = []
+        if decision.status == Status.FALLBACK and now - self._started_at >= STARTUP_GRACE_S:
+            problems.append(f"room_sensor_lost: {self.temp_sensor}")
+        for eid in (*self.trvs, *self.offset_entities):
+            state = self.hass.states.get(eid)
+            if state is None or state.state in BAD_STATES:
+                since = self._bad_since.setdefault(eid, now)
+                if now - since >= UNAVAILABLE_GRACE_S:
+                    problems.append(f"unavailable: {eid}")
+            else:
+                self._bad_since.pop(eid, None)
+        for act in (*self._modes.values(), *self._setpoints.values(), *self._offsets.values()):
+            if act.attempts < MAX_ATTEMPTS or now - act.last_write < VERIFY_DELAY_S:
+                continue
+            state = self.hass.states.get(act.entity_id)
+            if state is None or state.state in BAD_STATES:
+                continue
+            value = self._resolve_value(act, state)
+            if value is not None and not self._matches(act, state, value):
+                problems.append(f"not_confirming: {act.entity_id} {act.kind}={value}")
+        for eid in self.battery_entities:
+            state = self.hass.states.get(eid)
+            if state is None or state.state in BAD_STATES:
+                continue
+            if eid.startswith("binary_sensor."):
+                if state.state == STATE_ON:
+                    problems.append(f"battery_low: {eid}")
+            elif (level := _float(state.state)) is not None and level <= BATTERY_LOW_PCT:
+                problems.append(f"battery_low: {eid} ({level:.0f}%)")
+        return problems
+
     def offset_for(self, entity_id: str, level: int) -> float:
         """Calibration offset of one TRV for a heating level."""
         return float(self.trv_offsets[self.trv_keys[entity_id]][str(level)])
@@ -870,6 +940,8 @@ class RoomController:
         self.room_temp, self.slope = temp, slope
         self._update_desired(decision, target)
         self._update_covers(decision)
+        self.heat_demand = self._compute_demand(decision, temp, target)
+        self.problems = self._compute_problems(decision, now)
         self._schedule_apply()
         self._notify()
 

@@ -92,6 +92,8 @@ Wymagany HA ≥ 2024.11 (testowane na 2026.2). Ikona i logo integracji (katalog 
 | `number.<pokój>_<głowica>_offset_spoczynek_poziom_0` … `_offset_poziom_3` | offsety tej głowicy dla poziomów 0–3 (kategoria konfiguracja); zakres i krok jak w encji kalibracji głowicy |
 | `number.*` (kategoria konfiguracja) | histerezy, progi poziomów, min_hold, wyprzedzenie |
 | `sensor.<pokój>_poziom_grzania` | 0–3 |
+| `sensor.<pokój>_zapotrzebowanie_na_cieplo` | ile °C brakuje do zadanej (rozdzielczość 0,1); 0 gdy jest ciepło albo grzanie jest zablokowane (wyłączony, okno, ciepło na zewnątrz); nieznany przy utracie czujnika |
+| `binary_sensor.<pokój>_problem` | coś przeszkadza w sterowaniu; lista w atrybucie `problems` (szczegóły niżej) |
 | `sensor.<pokój>_status` | wyłączone / bezczynny / grzanie / okno otwarte / boost / ciepło na zewnątrz / brak czujnika |
 | `sensor.<pokój>_<głowica>_zadany_offset`, `sensor.<pokój>_zapisy_zigbee` | diagnostyka |
 
@@ -113,6 +115,19 @@ Tryb poza domem włączasz w termostacie pokoju (preset **Poza domem**, obok Har
 ### Temperatura zewnętrzna
 
 Czujnik wybierasz przy dodawaniu pomieszczenia albo w **Konfiguruj**. Może to być czujnik temperatury albo encja pogody (`weather.*`, brany jest jej atrybut `temperature`). Bez czujnika funkcja jest wyłączona i encja progu nie powstaje. Gdy czujnik jest niedostępny, zostaje ostatni stan, więc chwilowy brak odczytu nie przełącza głowic.
+
+### Problem i zapotrzebowanie na ciepło
+
+`binary_sensor.<pokój>_problem` włącza się, gdy:
+
+| Wpis w `problems` | Kiedy |
+|---|---|
+| `not_confirming: <encja> <co>=<wartość>` | głowica nie potwierdziła zapisu po 3 próbach (np. słaby zasięg, rozładowana bateria) |
+| `unavailable: <encja>` | głowica albo jej encja offsetu jest niedostępna dłużej niż 15 min |
+| `battery_low: <encja> (<n>%)` | bateria głowicy ≤ 15% (encja baterii na urządzeniu głowicy, wykrywana automatycznie) |
+| `room_sensor_lost: <encja>` | czujnik pokojowy zgubiony (głowice regulują same) |
+
+Zapotrzebowanie dla całego mieszkania zrobisz pomocnikiem **Połącz stan kilku czujników** (*Combine the state of several sensors*, typ *maksimum* albo *suma*) z czujników `*_zapotrzebowanie_na_cieplo`. Przyda się np. do sterowania kotłem albo pompą.
 
 ### Zasłony
 

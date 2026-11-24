@@ -69,6 +69,11 @@
     }
   },
   "entity": {
+    "binary_sensor": {
+      "problem": {
+        "name": "Problem"
+      }
+    },
     "button": {
       "boost": {
         "name": "Boost"
@@ -175,6 +180,9 @@
           "outdoor_warm": "Warm outside",
           "sensor_lost": "Sensor lost"
         }
+      },
+      "heat_demand": {
+        "name": "Heat demand"
       },
       "trv_offset": {
         "name": "{trv} commanded offset"
