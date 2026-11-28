@@ -90,7 +90,8 @@
               "schedule": "Schedule",
               "comfort": "Day",
               "eco": "Night",
-              "away": "Away"
+              "away": "Away",
+              "boost": "Boost"
             }
           }
         }

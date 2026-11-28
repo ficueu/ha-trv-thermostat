@@ -7,6 +7,7 @@ from typing import Any
 from homeassistant.components.climate import (
     ATTR_HVAC_MODE,
     PRESET_AWAY,
+    PRESET_BOOST,
     PRESET_COMFORT,
     PRESET_ECO,
     ClimateEntity,
@@ -39,7 +40,7 @@ class TrvThermostatClimate(TrvThermostatEntity, ClimateEntity):
     _attr_translation_key = "room"
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
-    _attr_preset_modes = [PRESET_SCHEDULE, PRESET_COMFORT, PRESET_ECO, PRESET_AWAY]
+    _attr_preset_modes = [PRESET_SCHEDULE, PRESET_COMFORT, PRESET_ECO, PRESET_AWAY, PRESET_BOOST]
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.PRESET_MODE
@@ -87,6 +88,8 @@ class TrvThermostatClimate(TrvThermostatEntity, ClimateEntity):
     @property
     def preset_mode(self) -> str:
         """Preset."""
+        if self._ctrl.boost_until is not None:
+            return PRESET_BOOST
         return PRESET_AWAY if self._ctrl.away else self._ctrl.preset
 
     @property

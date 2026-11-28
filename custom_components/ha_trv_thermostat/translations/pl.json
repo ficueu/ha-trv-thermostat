@@ -90,7 +90,8 @@
               "schedule": "Harmonogram",
               "comfort": "Dzień",
               "eco": "Noc",
-              "away": "Poza domem"
+              "away": "Poza domem",
+              "boost": "Boost"
             }
           }
         }

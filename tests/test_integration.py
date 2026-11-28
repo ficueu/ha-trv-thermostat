@@ -797,7 +797,7 @@ async def test_away_as_preset(hass: HomeAssistant, fake_devices, freezer) -> Non
     entry = await setup_room(hass)
     away = our_entity(hass, entry, "switch", "away")
     state = hass.states.get("climate.salon")
-    assert state.attributes["preset_modes"] == ["schedule", "comfort", "eco", "away"]
+    assert state.attributes["preset_modes"] == ["schedule", "comfort", "eco", "away", "boost"]
 
     async def preset(mode: str) -> None:
         await hass.services.async_call(
@@ -1000,3 +1000,49 @@ async def test_battery_low_indicators(hass: HomeAssistant, fake_devices, freezer
         "battery_low: binary_sensor.trv_1_battery_low",
         "battery_low: binary_sensor.trv_2_battery_low",
     ]
+
+
+async def test_boost_as_preset(hass: HomeAssistant, fake_devices, freezer) -> None:
+    """'boost' preset == boost button, time limited, previous preset comes back."""
+    trv1 = fake_devices["trv1"]
+    freezer.move_to("2026-11-09 11:00:00+00:00")
+    await set_temp(hass, 21.5)
+    entry = await setup_room(hass)
+    away = our_entity(hass, entry, "switch", "away")
+
+    async def preset(mode: str) -> None:
+        await hass.services.async_call(
+            "climate",
+            "set_preset_mode",
+            {"entity_id": "climate.salon", "preset_mode": mode},
+            blocking=True,
+        )
+        await settle(hass)
+
+    def shown() -> str:
+        return hass.states.get("climate.salon").attributes["preset_mode"]
+
+    await preset("comfort")
+    await preset("boost")
+    assert shown() == "boost"
+    assert hass.states.get("sensor.salon_status").state == "boost"
+    assert trv1.target_temperature == 30
+    # time limit -> back to comfort by itself
+    await advance(hass, freezer, 15 * 60 + 30, step=30)
+    assert shown() == "comfort"
+    assert trv1.target_temperature == 21.0
+
+    # boost while away -> away again afterwards; picking another preset ends boost early
+    await preset("away")
+    await preset("boost")
+    assert shown() == "boost" and hass.states.get(away).state == "on"
+    await advance(hass, freezer, 16 * 60, step=60)
+    assert shown() == "away"
+    await preset("boost")
+    await preset("away")  # ends boost, stays away
+    assert shown() == "away" and hass.states.get("sensor.salon_status").state != "boost"
+    assert trv1.target_temperature == 20.0
+    await preset("boost")
+    await preset("eco")  # ends boost and away
+    assert shown() == "eco" and hass.states.get(away).state == "off"
+    assert trv1.target_temperature == 19.0

@@ -29,6 +29,7 @@ from homeassistant.components.climate import (
     ATTR_TARGET_TEMP_STEP,
     DOMAIN as CLIMATE_DOMAIN,
     PRESET_AWAY,
+    PRESET_BOOST,
     PRESET_COMFORT,
     PRESET_ECO,
     SERVICE_SET_HVAC_MODE,
@@ -630,9 +631,22 @@ class RoomController:
 
         "away" is the away mode (same as the switch); the schedule/day/night
         preset underneath is kept and comes back when away is turned off.
+        "boost" starts a time-limited boost (same as the button); when it ends
+        the previous preset (incl. away) is shown again. Picking any other
+        preset ends a running boost.
         """
+        if preset == PRESET_BOOST:
+            self.async_start_boost()
+            return
+        if self.boost_until is not None:
+            self.boost_until = None
+            self._schedule_boost_end()
         if preset == PRESET_AWAY:
-            self.async_set_away(True)
+            if self.away:
+                self._save()
+                self.async_evaluate("boost stop")
+            else:
+                self.async_set_away(True)
             return
         self.away = False
         self.preset = preset

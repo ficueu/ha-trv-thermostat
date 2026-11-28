@@ -35,7 +35,7 @@ Sytuacje szczególne:
 | Okno otwarte (po opóźnieniu, domyślnie 60 s) | głowica → `off`; jeśli nie ma trybu off → setpoint = `min_temp` |
 | Termostat pokoju `off` | jak wyżej, offset bez zmian |
 | Temperatura zewnętrzna ≥ próg (domyślnie 15 °C) | jak wyżej (status „ciepło na zewnątrz”); grzanie wraca dopiero przy próg − histereza (domyślnie 1 °C, czyli 14 °C) |
-| **Boost** | głowice dostają swój maksymalny setpoint (`max_temp`), więc zawór otwiera się na pełno na „Czas boostu” (domyślnie 15 min). Boost pomija harmonogram, histerezę, poza domem, próg zewnętrzny i wyłączony termostat; wygrywa z nim tylko otwarte okno. Offsetów nie zmienia, więc to 2 zapisy na głowicę |
+| **Boost** (preset termostatu albo przycisk) | głowice dostają swój maksymalny setpoint (`max_temp`), więc zawór otwiera się na pełno na „Czas boostu” (domyślnie 15 min). Boost pomija harmonogram, histerezę, poza domem, próg zewnętrzny i wyłączony termostat; wygrywa z nim tylko otwarte okno. Offsetów nie zmienia, więc to 2 zapisy na głowicę. Po upływie czasu termostat sam wraca do poprzedniego presetu (także do Poza domem); wybranie innego presetu kończy boost wcześniej |
 | Pokój grzeje i brakuje ≥ próg zasłon (domyślnie 1,0 °C) | odsłania całkiem zasunięte zasłony przed grzejnikami, po zakończeniu grzania zasuwa te, które sama odsłoniła (szczegóły niżej) |
 | **Poza domem** (preset termostatu albo przełącznik) | zadana = temperatura poza domem (domyślnie 20 °C), niezależnie od harmonogramu i nadpisań; pokrętło głowicy jest cofane. Wyłączenie wraca do presetu, który był aktywny wcześniej |
 | Czujnik `unavailable` < 10 min | ignorowane, zostaje ostatnia wartość |
@@ -79,7 +79,7 @@ Wymagany HA ≥ 2024.11 (testowane na 2026.2). Ikona i logo integracji (katalog 
 
 | Encja | Opis |
 |---|---|
-| `climate.<pokój>` | termostat; presety: **Harmonogram** (dzień/noc wg godzin), **Dzień**, **Noc**, **Poza domem** |
+| `climate.<pokój>` | termostat; presety: **Harmonogram** (dzień/noc wg godzin), **Dzień**, **Noc**, **Poza domem**, **Boost** |
 | `number.<pokój>_temperatura_dzien` / `_noc` | temperatury zadane |
 | `time.<pokój>_poczatek_dnia` / `_nocy` | granice harmonogramu |
 | `switch.<pokój>_poza_domem` | tryb poza domem, to samo co preset **Poza domem** (przydatny do grupy przełączników) |
@@ -87,7 +87,7 @@ Wymagany HA ≥ 2024.11 (testowane na 2026.2). Ikona i logo integracji (katalog 
 | `number.<pokój>_wylacz_grzanie_przy_temperaturze_zewnetrznej` | próg wyłączenia grzania (domyślnie 15 °C); tylko gdy wybrano czujnik zewnętrzny |
 | `switch.<pokój>_sterowanie_zaslonami` | włącza sterowanie zasłonami (wyłączenie zasuwa to, co integracja odsłoniła); tylko gdy wybrano zasłony |
 | `number.<pokój>_odslon_zaslony_przy_niedogrzaniu` | próg niedogrzania do odsłonięcia (domyślnie 1,0 °C); tylko gdy wybrano zasłony |
-| `button.<pokój>_boost` / `_zakoncz_boost` | start (ponowne naciśnięcie liczy czas od nowa) / przerwanie boostu |
+| `button.<pokój>_boost` / `_zakoncz_boost` | start (ponowne naciśnięcie liczy czas od nowa) / przerwanie boostu; to samo co preset **Boost** |
 | `number.<pokój>_czas_boostu` | czas boostu (domyślnie 15 min) |
 | `number.<pokój>_<głowica>_offset_spoczynek_poziom_0` … `_offset_poziom_3` | offsety tej głowicy dla poziomów 0–3 (kategoria konfiguracja); zakres i krok jak w encji kalibracji głowicy |
 | `number.*` (kategoria konfiguracja) | histerezy, progi poziomów, min_hold, wyprzedzenie |
